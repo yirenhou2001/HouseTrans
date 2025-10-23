@@ -91,140 +91,106 @@ GenSyn <- function(
     synthetic_data = TRUE,
     data_summary   = FALSE,
     postprocessing = TRUE,
-
     n_households = 10,
     n_runs       = 10,
-
     hh.size        = sample(3:7, 1),
     tests.per.week = 1,
-
     Covariates               = FALSE,
     Covariates_list          = c("Vaccination status", "Antibody Level"),
     Covariate_specifications = NULL,
-
     day_series_covariates = TRUE,
     series_cols           = NULL,
-
-    comm_covariate_cols   = NULL,   # e.g., c("cases", "vaccination_status_mode")
-    hh_covariate_cols     = NULL,   # e.g., c("vaccination_status_mode","bmi_mean")
-    hh_by_role            = FALSE,  # set TRUE for role-specific HH effects
-    hh_role_covariate_cols = NULL,  # list(infant=..., sibling=..., adult=..., elder=...)
+    comm_covariate_cols   = NULL,
+    hh_covariate_cols     = NULL,
+    hh_by_role            = FALSE,
+    hh_role_covariate_cols = NULL,
     standardize_covariates = TRUE,
-
     lambda_comm = 0.01,
     lambda_hh   = 0.01,
-
-    #Community transmission parameters
     p.comm.base.infant.fix   = 0.002,
     p.comm.multiplier.sibling = 1,
     p.comm.multiplier.parent  = 1,
     p.comm.multiplier.elder   = 1,
-
-    #Household transmission parameters
     p.hh.base.infant        = 0.2,
     p.hh.multiplier.sibling = 5.267686e-01,
     p.hh.multiplier.parent  = 8.008933e-01,
     p.hh.multiplier.elder   = 6.008933e-01,
-
-    #Baseline/partial immunity
     p.imm.base.sibling = 1e-10,
     p.imm.base.parent  = 1e-10,
     p.imm.base.elder   = 1e-10,
-
     partial.immunity.infant  = 1e-10,
     partial.immunity.sibling = 1e-10,
     partial.immunity.parent  = 1e-10,
     partial.immunity.elder   = 1e-10,
-
-    #Natural history and detection
     duration.latent     = 1,
     duration.infect.inf = 2,
     multiplier.dur.sibpar = 0.5,
     p.detect            = 0.999,
-
-    #Seasonality and start and end date
     amplitude  = 2.65810 * 0,
     phase      = -0.408,
     start_date = as.Date("2024-09-21"),
     end_date   = as.Date("2025-04-17"),
-
-    #Imputed delays
     latent_par = list(shape = 2, scale = 1),
     report_par = list(shape = 1, scale = 1.5),
     infect_par = list(shape = 3, scale = 2),
-
-    #Optimization (starting values & penalties)
     start_par    = c(-6, 0.02, -2, rep(0, 6)),
     lambda       = 0.01,
     lambda0      = 0.2,
     lambda_alpha = 5,
     delta0_true  = qlogis(0.002),
     alpha0_true  = qlogis(0.2),
-
     true_values = c(
       # Community infection
-      delta0 = log(7.148217e-05),                        # ≈ -9.546
-      gamma2 = log(7.148217e-05 * 4.331956e+00) - log(7.148217e-05), # sibling multiplier
-      gamma3 = log(7.148217e-05 * 1.835466e+00) - log(7.148217e-05), # parent multiplier
-      gamma4 = log(7.148217e-05 * 2) - log(7.148217e-05),            # elder multiplier
-
+      delta0 = log(7.148217e-05),
+      gamma2 = log(7.148217e-05 * 4.331956e+00) - log(7.148217e-05),
+      gamma3 = log(7.148217e-05 * 1.835466e+00) - log(7.148217e-05),
+      gamma4 = log(7.148217e-05 * 2) - log(7.148217e-05),
       # Household transmission
-      alpha0 = log(0.2888953),                           # ≈ -1.242
-      beta2  = log(0.2888953 * 0.5267686) - log(0.2888953), # sibling / infant
-      beta3  = log(0.2888953 * 0.8008933) - log(0.2888953), # parent  / infant
-      beta4  = log(0.2888953 * 0.6008933) - log(0.2888953)  # elder   / infant
+      alpha0 = log(0.2888953),
+      beta2  = log(0.2888953 * 0.5267686) - log(0.2888953),
+      beta3  = log(0.2888953 * 0.8008933) - log(0.2888953),
+      beta4  = log(0.2888953 * 0.6008933) - log(0.2888953)
     )
 ) {
-
   if (isFALSE(synthetic_data)) {
     stop("Please use TransmissionChainAnalysis if not doing analysis on synthetic data!", call. = FALSE)
   }
 
-  #Run the full pipeline for synthetic data
+  # Run the full pipeline for synthetic data
   results <- main_parameter_estimation_pipeline(
     user_data      = NULL,
     synthetic_data = TRUE,
     n_households   = n_households,
     n_runs         = n_runs,
-
     hh.size        = hh.size,
     tests.per.week = tests.per.week,
-
     Covariates               = Covariates,
     Covariates_list          = Covariates_list,
     Covariate_specifications = Covariate_specifications,
-
     day_series_covariates = day_series_covariates,
     series_cols           = series_cols,
-
     comm_covariate_cols   = comm_covariate_cols,
     hh_covariate_cols     = hh_covariate_cols,
     hh_by_role            = hh_by_role,
     hh_role_covariate_cols = hh_role_covariate_cols,
     standardize_covariates = standardize_covariates,
-
     lambda_comm = lambda_comm,
     lambda_hh   = lambda_hh,
-
     p.comm.base.infant.fix   = p.comm.base.infant.fix,
     p.comm.multiplier.sibling = p.comm.multiplier.sibling,
     p.comm.multiplier.parent  = p.comm.multiplier.parent,
     p.comm.multiplier.elder   = p.comm.multiplier.elder,
-
     p.hh.base.infant        = p.hh.base.infant,
     p.hh.multiplier.sibling = p.hh.multiplier.sibling,
     p.hh.multiplier.parent  = p.hh.multiplier.parent,
     p.hh.multiplier.elder   = p.hh.multiplier.elder,
-
     p.imm.base.sibling = p.imm.base.sibling,
     p.imm.base.parent  = p.imm.base.parent,
     p.imm.base.elder   = p.imm.base.elder,
-
     partial.immunity.infant  = partial.immunity.infant,
     partial.immunity.sibling = partial.immunity.sibling,
     partial.immunity.parent  = partial.immunity.parent,
     partial.immunity.elder   = partial.immunity.elder,
-
     duration.latent        = duration.latent,
     duration.infect.inf    = duration.infect.inf,
     multiplier.dur.sibpar  = multiplier.dur.sibpar,
@@ -233,11 +199,9 @@ GenSyn <- function(
     phase                  = phase,
     start_date             = start_date,
     end_date               = end_date,
-
     latent_par = latent_par,
     report_par = report_par,
     infect_par = infect_par,
-
     start_par    = start_par,
     lambda       = lambda,
     lambda0      = lambda0,
@@ -246,19 +210,57 @@ GenSyn <- function(
     alpha0_true  = alpha0_true
   )
 
-  #Optional: print data summary prepared by the pipeline
-  if (isTRUE(data_summary)) {
+  # Prepare optional outputs without printing
+  summarized_data <- if (isTRUE(data_summary)) results$summarized_data else NULL
+  postprocessing_est <- if (isTRUE(postprocessing)) {
+    postprocessing_estimates(results$estimates, true_values = true_values)
+  } else {
+    NULL
+  }
+
+  # Return visibly with a custom class so print() can control console output
+  structure(
+    list(
+      results          = results,
+      summarized_data  = summarized_data,   # convenience copy; also lives in results$summarized_data
+      postprocessing   = postprocessing_est
+    ),
+    class = "GenSynResult"
+  )
+}
+
+#' Print a GenSynResult
+#'
+#' Nicely prints sections available in a \code{GenSynResult} returned by
+#' \code{\link{GenSyn}}. If present, the per-individual data summary and the
+#' post-processing table are shown; otherwise concise guidance is printed.
+#'
+#' @param x A \code{GenSynResult} object, typically the result of \code{\link{GenSyn}}.
+#' @param ... Passed to or from other methods (unused).
+#'
+#' @details
+#' This S3 method is invoked when a \code{GenSynResult} is printed (e.g., typing
+#' the object at the console or calling \code{print(x)}). The method does not
+#' perform any computation and does not modify global state; it only formats and
+#' prints components that were included in the returned object.
+#'
+#' @return \code{x}, returned invisibly.
+#'
+#' @seealso \code{\link{GenSyn}}
+#' @exportS3Method print GenSynResult
+print.GenSynResult <- function(x, ...) {
+  cat("GenSyn result\n")
+  if (!is.null(x$summarized_data)) {
     cat("\n--- Data summary ---\n")
-    print(results$summarized_data)
+    print(x$summarized_data)
+  } else {
+    cat("\n(Data summary not requested; set data_summary = TRUE to include.)\n")
   }
-
-  # Optional: post-processing (uses defaults embedded in postprocessing_estimates)
-  postprocessing_est <- NULL
-  if (isTRUE(postprocessing)) {
+  if (!is.null(x$postprocessing)) {
     cat("\n--- Post-processing of estimates ---\n")
-    postprocessing_est <- postprocessing_estimates(results$estimates, true_values = true_values)
-    print(postprocessing_est)
+    print(x$postprocessing)
+  } else {
+    cat("\n(Post-processing not requested; set postprocessing = TRUE to include.)\n")
   }
-
-  invisible(list(results = results, postprocessing = postprocessing_est))
+  invisible(x)
 }

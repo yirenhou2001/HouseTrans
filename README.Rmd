@@ -34,8 +34,6 @@ This package lets user simulate household transmission data, estimate parameters
 ## Quick start
 
 ```{r}
-# Install from source
-devtools::install()
 library(Household.Transmission.Chain.Data.Analysis)
 # 1) Simulate and estimate
 out1 <- GenSyn(
