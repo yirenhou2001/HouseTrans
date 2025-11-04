@@ -4,16 +4,14 @@ library(tidyverse)
 
 remove.packages("Household.Transmission.Chain.Data.Analysis")
 .rs.restartR()
-devtools::document()
+#devtools::document()
 meg = devtools::check()
 meg$notes
 meg$warnings
 meg$errors
 
 devtools::install()
-devtools::build_manual()
-
-library(Household.Transmission.Chain.Data.Analysis)
+#devtools::build_manual()
 
 library(Household.Transmission.Chain.Data.Analysis)
 # 1) Simulate and estimate
