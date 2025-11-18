@@ -99,6 +99,7 @@ result_example2 <- TransmissionChainAnalysis(
 
   # RSV/VL + Stan knobs
   seasonal_forcing_list = seasonal_forcing_list,
+  stan_file    = "HH_parameter_estimation2.stan",
   max_days              = T_max,
 
   # keep Stan light so it finishes quickly
@@ -118,7 +119,7 @@ result_example2 <- TransmissionChainAnalysis(
 Best for standard binary infection data (positive/negative).
 
 ```{r}
-# 2) Simulate and estimate via MLE
+# 3) Simulate and estimate via MLE
 result_example3 <- GenSyn(
   n_households = 10,
   n_runs       = 10,
