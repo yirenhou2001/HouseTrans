@@ -61,22 +61,6 @@ result_example1 <- GenSyn(
 )
 ```
 
-## Method B: Legacy Engine (Maximum Likelihood)
-
-Best for standard binary infection data (positive/negative).
-
-```{r}
-# 2) Simulate and estimate via MLE
-result_example2 <- GenSyn(
-  n_households = 10,
-  n_runs       = 10,
-  data_summary = TRUE,
-
-  engine = "legacy",
-  estimation_method = "mle"
-)
-```
-
 
 ```{r}
 # 3) Estimate from your own formatted data
@@ -116,7 +100,7 @@ seasonal_forcing_list <- list(
   toddler = rep(1, T_max)
 )
 
-result_example3 <- TransmissionChainAnalysis(
+result_example2 <- TransmissionChainAnalysis(
   user_data         = df_person,    # <-- per-person episodes format
   estimation_method = "stan",
   print_plots    = FALSE,
@@ -133,6 +117,22 @@ result_example3 <- TransmissionChainAnalysis(
   stan_init    = "random",
   stan_refresh = 50,
   stan_cores   = 1
+)
+```
+
+## Method B: Legacy Engine (Maximum Likelihood)
+
+Best for standard binary infection data (positive/negative).
+
+```{r}
+# 2) Simulate and estimate via MLE
+result_example3 <- GenSyn(
+  n_households = 10,
+  n_runs       = 10,
+  data_summary = TRUE,
+
+  engine = "legacy",
+  estimation_method = "mle"
 )
 ```
 

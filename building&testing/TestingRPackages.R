@@ -14,10 +14,6 @@ devtools::install()
 devtools::build_manual()
 library(Household.Transmission.Chain.Data.Analysis)
 
-
-
-
-
 result_example1 <- GenSyn(
   n_households = 10,
   n_runs       = 10,
@@ -25,7 +21,6 @@ result_example1 <- GenSyn(
   estimation_method = "mle"
 )
 result_example1$postprocessing
-
 
 
 result_example2 <- GenSyn(
@@ -39,8 +34,6 @@ result_example2 <- GenSyn(
 result_example2$data_summary
 result_example2$postprocessing
 print(result_example2)
-
-
 
 
 seasonal_forcing_list <- readRDS("seasonal_forcing_list.rds")
