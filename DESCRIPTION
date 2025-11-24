@@ -6,7 +6,7 @@ Authors@R: c(
          email = "ke.li.kl662@yale.edu",
          role = c("aut")),
   person(given = "Yiren", family = "Hou",
-         email = "hou.yiren@gmail.com",
+         email = "yiren.hou@yale.edu",
          role = c("aut", "cre"))
 	)
 Description: This package provides a framework for household transmission chain analysis by a streamlined pipeline to simulate household transmission data and to estimate community and within-household infection risks from either synthetic or user-supplied data. The workflow builds person-day tables, impute infection timelines with Gamma-distributed delays, and fits penalized models with optional covariates. Post-processing summarizes mean estimates, uncertainty, bias, and relative bias, Two user functions cover the main tasks: GenSyn() to simulate data and run the full estimation pipeline (with optional summaries), and TransmissionChainAnalysis() to run the same estimation pipeline on user data.
