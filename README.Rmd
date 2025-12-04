@@ -15,7 +15,6 @@ knitr::opts_chunk$set(echo = TRUE)
 
 This package provides a streamlined pipeline to simulate household infection dynamics, estimate transmission parameters, and visualize epidemic timelines. It supports two distinct modeling engines:
 
-
 A. **RSV / Viral-Load Engine (Stan)**: A Bayesian approach using `rstan` that models transmission probability as a function of viral load, seasonality, and role-specific susceptibility/infectivity.
 
 B. **Legacy / Maximum Likelihood Estimation (MLE) Engine**: A likelihood-based approach for binary infection status data using `optim` with support for extensive community and household covariates.
