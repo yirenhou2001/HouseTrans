@@ -19,12 +19,14 @@ jobs:
         with:
           r-version: 'release'
           use-public-rspm: true
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          extra-packages: any::rcmdcheck
+          needs: check
+      # (Optional safety) ensure rcmdcheck is present
+      - name: Install rcmdcheck (fallback)
+        run: Rscript -e 'if (!requireNamespace("rcmdcheck", quietly = TRUE)) install.packages("rcmdcheck")'
       - uses: r-lib/actions/check-r-package@v2
         with:
-          build_args: 'c("--no-manual","--no-build-vignettes")'
-          check_args: 'c("--ignore-vignettes")'
-          upload-snapshots: false
-      - uses: r-lib/actions/check-r-package@v2
-        with:
-          build_args: 'c("--no-manual","--no-build-vignettes")'
+          args: 'c("--no-manual","--no-build-vignettes","--ignore-vignettes")'
           upload-snapshots: false
