@@ -1,0 +1,205 @@
+
+# Household.Transmission.Chain.Data.Analysis
+
+### Household transmission chain simulation, estimation, and visualization
+
+This package provides a streamlined pipeline to simulate household
+infection dynamics, estimate transmission parameters, and visualize
+epidemic timelines. It supports two distinct modeling engines:
+
+A. **RSV / Viral-Load Engine (Stan)**: A Bayesian approach using `rstan`
+that models transmission probability as a function of viral load,
+seasonality, and role-specific susceptibility/infectivity.
+
+B. **Legacy / Maximum Likelihood Estimation (MLE) Engine**: A
+likelihood-based approach for binary infection status data using `optim`
+with support for extensive community and household covariates.
+
+## Core Workflow
+
+1.  `GenSyn()`: **Simulation and validation** Use this to generate
+    synthetic data and run the full estimation pipeline end-to-end. It
+    allows you to validate the model by comparing estimates against
+    known “ground truth” parameters.
+
+- **Simulates** household structures, viral load trajectories (Stan
+  path), or binary infection statuses (MLE path).
+
+- **Estimates** parameters using the generated data.
+
+- **Validates** results by reporting bias and relative bias in the
+  post-processing step.
+
+2.  `TransmissionChainAnalysis()`: **User data analysis** Use this to
+    estimate transmission parameters from your own observational data
+    with similar functionalities with `GenSyn()`.
+
+## Quick start
+
+## Method A: RSV/VL Engine (Bayesian approach)
+
+Typically runs faster than Method B.
+
+Best for analyzing transmission driven by viral load trajectories and
+seasonality.
+
+``` r
+library(Household.Transmission.Chain.Data.Analysis)
+# 1) Simulate and estimate via Stan
+seasonal_forcing_list <- readRDS("seasonal_forcing_list.rds")
+result_example1 <- GenSyn(
+  n_households = 5,
+  print_plots    = FALSE,
+
+  engine = "rsv_vl",
+  estimation_method = "stan",
+  seasonal_forcing_list = seasonal_forcing_list,
+
+  stan_chains = 1,
+  stan_iter   = 800,
+  stan_warmup = 400,
+  stan_control = list(adapt_delta = 0.98, max_treedepth = 12),
+  stan_refresh = 25,
+  stan_cores   = 1
+)
+```
+
+    ## Error in eval(expr, envir) : 
+    ##   Exception: variable does not exist; processing stage=data initialization; variable name=y; base type=double (in 'anon_model', line 3, column 2 to column 14)
+
+    ## failed to create the sampler; sampling not done
+
+    ## Stan model 'anon_model' does not contain samples.
+
+## Method B: Legacy Engine (Maximum Likelihood)
+
+Best for standard binary infection data (positive/negative).
+
+``` r
+# 2) Simulate and estimate via MLE
+result_example2 <- GenSyn(
+  n_households = 10,
+  n_runs       = 10,
+  data_summary = TRUE,
+
+  engine = "legacy",
+  estimation_method = "mle"
+)
+```
+
+    ## Initialized start_par of length 8 (based on available covariates).
+
+``` r
+# 3) Estimate from your own formatted data
+T_max <- 12
+df_person <- rbind(
+  data.frame(
+    hh_id             = "HH1",
+    person_id         = 1:3,
+    role              = c("adult","child","elderly"),
+    infection_time    = c( 2,  4, NA),
+    infectious_start  = c( 3,  6, NA),
+    infectious_end    = c( 8,  9, NA),
+    infection_resolved= c( 9, 10, NA),
+    stringsAsFactors  = FALSE
+  ),
+  data.frame(
+    hh_id             = "HH2",
+    person_id         = 1:3,
+    role              = c("adult","child","elderly"),
+    infection_time    = c( 1,  3, NA),
+    infectious_start  = c( 2,  5, NA),
+    infectious_end    = c( 7,  9, NA),
+    infection_resolved= c( 8, 10, NA),
+    stringsAsFactors  = FALSE
+  )
+)
+
+# Optional list-cols (safe to omit)
+df_person$vl_full_trajectory    <- vector("list", nrow(df_person))
+df_person$viral_loads_test_days <- vector("list", nrow(df_person))
+
+# Flat seasonal forcing for all roles (length must match max_days)
+seasonal_forcing_list <- list(
+  adult   = rep(1, T_max),
+  child   = rep(1, T_max),
+  elderly = rep(1, T_max),
+  toddler = rep(1, T_max)
+)
+
+result_example3 <- TransmissionChainAnalysis(
+  user_data         = df_person,    # <-- per-person episodes format
+  estimation_method = "stan",
+  print_plots    = FALSE,
+
+  # RSV/VL + Stan knobs
+  seasonal_forcing_list = seasonal_forcing_list,
+  max_days              = T_max,
+
+  # keep Stan light so it finishes quickly
+  stan_chains  = 1,
+  stan_iter    = 300,
+  stan_warmup  = 150,
+  stan_control = list(adapt_delta = 0.98, max_treedepth = 12),
+  stan_init    = "random",
+  stan_refresh = 50,
+  stan_cores   = 1
+)
+```
+
+    ## Error in eval(expr, envir) : 
+    ##   Exception: variable does not exist; processing stage=data initialization; variable name=y; base type=double (in 'anon_model', line 3, column 2 to column 14)
+
+    ## failed to create the sampler; sampling not done
+
+    ## Stan model 'anon_model' does not contain samples.
+
+## Inputs
+
+For `TransmissionChainAnalysis()`, `user_data` should be a long-format
+data frame containing at least:
+
+| Column             | Description                                          |
+|--------------------|------------------------------------------------------|
+| `HH`/`hh_id`       | Unique household identifier                          |
+| `individual_ID`    | Individual ID within the household                   |
+| `role`             | Family role (e.g., “infant”,“child”,“adult”,“elder”) |
+| `test_date`        | Integer day of the test (or Date object)             |
+| `infection_status` | Binary (0/1) or logical indicating infection         |
+| `community_risk`   | Numeric daily community risk intensity               |
+
+## Outputs
+
+Both main functions return a result object containing:
+
+- `$results`: The raw output from the pipeline.
+
+  - MLE: Contains `estimates` (matrix of runs) and `summarized_data`
+    (imputed timelines).
+
+  - Stan: Contains `fit` (the Stan object) and `posterior_summary`.
+
+- `$postprocessing`: A clean summary table.
+
+  - MLE: Bias, relative bias, mean estimate, and standard error across
+    runs.
+
+  - Stan: Posterior mean, standard deviation, and 95% credible intervals
+    for role-specific susceptibility (`phi`) and infectivity (`kappa`).
+
+- `$plot_list`: A list of `ggplot2` objects (if requested).
+
+## Visualization
+
+The package includes built-in plotting capabilities to inspect
+transmission dynamics. These are accessible via the `plots` argument in
+`TransmissionChainAnalysis` or `GenSyn`.
+
+- **Daily/Weekly Infections:** Aggregate counts of new infections by
+  role.
+
+- **Timelines:** Per-household charts showing infection and detection
+  times.
+
+- **SAR by Viral Load:** Analysis of secondary attack rate based on the
+  index case’s viral load.
