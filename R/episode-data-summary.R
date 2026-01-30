@@ -269,7 +269,7 @@ data_summarization <- function(
                                                seasonal_forcing_list,
                                                start_date, end_date) {
   # 1) Convert the simulator-style list to a long test-day table
-  long_tests <- households_to_long_tests(households, seasonal_forcing_list)
+  long_tests <- households_to_long_tests(households)
 
   # 2) Reuse your legacy summarization + imputation (gives HH/ID/roles/inf_* cols)
   dt <- summarize_individuals(raw_dt = list(long_tests),

@@ -19,16 +19,13 @@
 
 \item{print}{Logical; print each plot when \code{TRUE} (default).}
 
-\item{index_vl_column}{Optional character; viral-load column in
-\code{person_day} (fallback \code{"vl_test"}).}
+\item{index_vl_column}{Optional character; viral-load column (unused, kept for API compatibility).}
 }
 \value{
 Named list of \code{ggplot} objects for the requested plots
 (a subset of \code{daily}, \code{weekly}, \code{timeline}, \code{sar}).
 }
 \description{
-Builds selected figures from either RSV/VL simulation outputs
-(\code{results$raw_simulation}) or legacy summary data via
-\code{.compute_plot_inputs()}.
+Builds selected figures from RSV/VL simulation outputs.
 }
 \keyword{internal}

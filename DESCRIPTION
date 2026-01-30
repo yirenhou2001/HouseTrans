@@ -9,7 +9,7 @@ Authors@R: c(
          email = "yiren.hou@yale.edu",
          role = c("aut", "cre"))
 	)
-Description: This package provides a framework for household transmission chain analysis by a streamlined pipeline to simulate household transmission data and to estimate community and within-household infection risks from either synthetic or user-supplied data. The workflow builds person-day tables, impute infection timelines with Gamma-distributed delays, and fits penalized models with optional covariates. Post-processing summarizes mean estimates, uncertainty, bias, and relative bias, Two user functions cover the main tasks: GenSyn() to simulate data and run the full estimation pipeline (with optional summaries), and TransmissionChainAnalysis() to run the same estimation pipeline on user data.
+Description: Tools to simulate and analyze household transmission chains with viral-load dynamics. Generates synthetic household data with role-specific susceptibility and infectivity and optional seasonal forcing, constructs person-day and test-time tables, and estimates community and within-household transmission parameters via Bayesian inference using Stan. Includes utilities to preprocess user-supplied testing data, summarize secondary attack rates and tranmission timelines, and creat diagnostic plots.
 License: MIT + file LICENSE
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
@@ -22,8 +22,7 @@ Imports:
     tidyr,
     utils,
     rstan,
-    stats,
-    tidyverse
+    stats
 Suggests: 
     testthat (>= 3.0.0),
     knitr,

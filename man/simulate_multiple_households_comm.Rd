@@ -2,59 +2,99 @@
 % Please edit documentation in R/utils-simulatehouseholds.R
 \name{simulate_multiple_households_comm}
 \alias{simulate_multiple_households_comm}
-\title{Simulate multiple households (RSV/VL engine)}
+\title{Simulate multiple households with community transmission}
 \usage{
 simulate_multiple_households_comm(
-  n_households = 200,
+  n_households,
   alpha_comm_by_role = 0.005,
-  beta1 = 0.06,
-  beta2 = 1e-07,
-  delta = 1,
-  rho = 3,
-  V_ref = 1e+07,
-  phi_by_role = c(adult = 1, child = 1.1, elderly = 0.8, toddler = 1.2),
-  kappa_by_role = c(adult = 1, child = 1.1, elderly = 0.7, toddler = 1.2),
-  latent_shape = 2,
-  latent_scale = 1,
-  infectious_shape = 2,
-  infectious_scale = 2,
-  peak_day = 2,
-  width = 2,
-  max_days = 40,
+  beta1 = 0.3,
+  beta2 = 0.05,
+  delta = 0,
+  phi_by_role = c(adult = 1, child = 7, toddler = 7, elderly = 4),
+  kappa_by_role = c(adult = 1, child = 1.5, toddler = 1.5, elderly = 1),
+  latent_shape = 3,
+  latent_scale = 0.5,
+  infectious_shape = 3,
+  infectious_scale = 1,
+  resolve_shape = 1.5,
+  resolve_scale = 0.5,
+  peak_day = 1,
+  width = 4,
+  max_days = 365,
   verbose = FALSE,
-  seasonal_forcing_list = NULL
+  seasonal_forcing_list = NULL,
+  ptrans_threshold = 0.5,
+  detect_threshold_log10 = 1,
+  detect_threshold_Ct = 40,
+  surveillance_interval = 7,
+  test_daily = FALSE,
+  viral_testing = "viral load",
+  V_ref = 3,
+  V_rho = 2.5,
+  Ct_50 = 40,
+  Ct_delta = 2,
+  start_date = "2024-01-01",
+  VL_params_list = default_VL_params,
+  Ct_params_list = default_Ct_params,
+  household_profile_list = default_household_profile
 )
 }
 \arguments{
-\item{n_households}{Integer; number of households.}
+\item{n_households}{Integer; number of households to simulate.}
 
-\item{alpha_comm_by_role}{Numeric; baseline community hazard (scalar).}
+\item{alpha_comm_by_role}{Numeric; baseline community acquisition rate.}
 
-\item{beta1, beta2, delta, rho, V_ref}{Numeric; transmission constants.}
+\item{beta1, beta2}{Numeric; transmission coefficients.}
 
-\item{phi_by_role, kappa_by_role}{Named numeric vectors; susceptibility and
-infectivity multipliers by role.}
+\item{delta}{Numeric; household size scaling exponent.}
 
-\item{latent_shape, latent_scale, infectious_shape, infectious_scale}{Numeric;
-gamma parameters for latent/infectious durations.}
+\item{phi_by_role}{Named numeric vector; susceptibility multipliers by role.}
 
-\item{peak_day, width}{Numeric; infectivity profile controls.}
+\item{kappa_by_role}{Named numeric vector; infectivity multipliers by role.}
+
+\item{latent_shape, latent_scale}{Numeric; gamma parameters for latent period.}
+
+\item{infectious_shape, infectious_scale}{Numeric; gamma parameters for infectious period.}
+
+\item{resolve_shape, resolve_scale}{Numeric; gamma parameters for resolution period.}
+
+\item{peak_day, width}{Numeric; infectivity profile parameters.}
 
 \item{max_days}{Integer; simulation horizon (days).}
 
-\item{verbose}{Logical; print progress.}
+\item{verbose}{Logical; print debug information.}
 
-\item{seasonal_forcing_list}{Optional list of length 4 with role-specific
-seasonal multipliers (length \code{max_days}).}
+\item{seasonal_forcing_list}{Named list; seasonal forcing vectors by role.}
+
+\item{ptrans_threshold}{Numeric; transmission potential threshold.}
+
+\item{detect_threshold_log10}{Numeric; VL detection threshold (log10).}
+
+\item{detect_threshold_Ct}{Numeric; Ct detection threshold.}
+
+\item{surveillance_interval}{Integer; days between scheduled tests.}
+
+\item{test_daily}{Logical; switch to daily testing after first detection.}
+
+\item{viral_testing}{Character; \code{"viral load"} or \code{"Ct"}.}
+
+\item{V_ref, V_rho}{Numeric; viral load reference and power for transmission.}
+
+\item{Ct_50, Ct_delta}{Numeric; Ct-based infectivity parameters.}
+
+\item{start_date}{Character or Date; start date for actual calendar dates.}
+
+\item{VL_params_list}{Named list; role-specific VL parameters.}
+
+\item{Ct_params_list}{Named list; role-specific Ct parameters.}
+
+\item{household_profile_list}{Named list; household composition probabilities.}
 }
 \value{
-A list with:
-\describe{
-\item{\code{hh_df}}{Stacked data frame across households.}
-\item{\code{households}}{List of per-household data frames.}
-}
+A list with \code{hh_df}, \code{households}, and \code{diagnostic_df}.
 }
 \description{
-Runs \code{\link{simulate_one_household_comm}} across households and returns
-both the stacked data frame and the per-household list.
+Wrapper that calls \code{\link{simulate_one_household_comm}} for each household
+and assembles results into a combined data frame and diagnostic testing records.
 }
+\keyword{internal}

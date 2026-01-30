@@ -7,14 +7,11 @@
 postprocess_stan_fit(fit)
 }
 \arguments{
-\item{fit}{A \code{stanfit} object returned by \code{\link{run_household_stan}}.}
+\item{fit}{A \code{stanfit} object.}
 }
 \value{
-A data frame with columns:
-\code{Parameter}, \code{Estimate}, \code{SD}, \code{Lower CI}, \code{Median},
-\code{Upper CI}.
+A data frame with posterior summaries.
 }
 \description{
-Extracts posterior summaries for \code{phi_by_role[]} and \code{kappa_by_role[]}
-from a \code{stanfit}.
+Extracts posterior summaries from a \code{stanfit}.
 }

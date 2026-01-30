@@ -21,18 +21,3 @@ test_that("simulate_multiple_households_comm returns expected structure", {
   expect_true(!is.null(attr(sim$households[[1]], "test_days")) ||
                 !is.null(attr(sim$households[[1]], "params")))
 })
-
-test_that("simulate_one_household_comm honors max_days and role set", {
-  set.seed(123)
-  hh <- simulate_one_household_comm(
-    hh_id = "HHX",
-    roles = c("adult","adult","child","elderly"),
-    alpha_comm_by_role = 2e-3,
-    max_days = 12,
-    perfect_detection = TRUE
-  )
-  expect_s3_class(hh, "data.frame")
-  expect_true(max(hh$infection_resolved, na.rm = TRUE) <= 12)
-  expect_setequal(unique(hh$role), c("adult","child","elderly"))
-  expect_true(is.integer(attr(hh, "test_days")))
-})

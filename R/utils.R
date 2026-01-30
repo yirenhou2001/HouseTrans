@@ -368,8 +368,8 @@ infectious_time_imputation <- function(dt, study_start,
   rtrunc_gamma_vec <- function(shape, scale, upper){
     n <- length(upper)
     up <- upper; up[!is.finite(up) | up <= 0] <- 1e-8
-    u  <- stats::runif(n)
-    stats::qgamma(u * stats::pgamma(up, shape = shape, rate = 1/scale),
+    u  <- runif(n)
+    qgamma(u * pgamma(up, shape = shape, rate = 1/scale),
                   shape = shape, rate = 1/scale)
   }
 
@@ -399,7 +399,7 @@ infectious_time_imputation <- function(dt, study_start,
                            upper = rep_upper)
 
   #Draw infectious period
-  infd <- stats::rgamma(length(idx), shape = infect_par$shape, rate = 1/infect_par$scale) * m_inf
+  infd <- rgamma(length(idx), shape = infect_par$shape, rate = 1/infect_par$scale) * m_inf
   infd[infd < 0] <- 0
 
   dt$latent_delay[idx] <- lat
@@ -661,7 +661,7 @@ running_parameter_estimation <- function(long_dt, n_runs, start_par = NULL,
         uj <- sort(unique(X[, j]))
         is_binary <- length(uj) <= 2 && all(uj %in% c(0,1))
         if (!is_binary) {
-          m <- mean(X[, j]); s <- stats::sd(X[, j])
+          m <- mean(X[, j]); s <- sd(X[, j])
           if (is.finite(s) && s > 0) X[, j] <- (X[, j] - m)/s
         }
       }

@@ -2,117 +2,102 @@
 % Please edit documentation in R/utils-simulatehouseholds.R
 \name{simulate_households}
 \alias{simulate_households}
-\title{Simulate households (legacy or RSV/VL engine)}
+\title{Simulate households (RSV/VL engine)}
 \usage{
 simulate_households(
   n_households,
-  hh.size,
-  tests.per.week = 1,
-  engine = c("legacy", "rsv_vl"),
-  simulation_function = generate_synthetic_data_one,
-  Covariates = FALSE,
-  Covariates_list = c("Vaccination status", "Antibody Level"),
-  Covariate_specifications = NULL,
-  amplitude = 0,
-  phase = 0,
-  start_date = as.Date("2024-09-21"),
-  end_date = as.Date("2025-04-17"),
-  max_days = NULL,
-  p.comm.base.infant.fix = 0.002,
-  p.comm.multiplier.sibling = 1,
-  p.comm.multiplier.parent = 1,
-  p.comm.multiplier.elder = 1,
-  p.hh.base.infant = 0.2,
-  p.hh.multiplier.sibling = 0.5267686,
-  p.hh.multiplier.parent = 0.8008933,
-  p.hh.multiplier.elder = 0.6008933,
-  p.imm.base.sibling = 1e-10,
-  p.imm.base.parent = 1e-10,
-  p.imm.base.elder = 1e-10,
-  partial.immunity.infant = 1e-10,
-  partial.immunity.sibling = 1e-10,
-  partial.immunity.parent = 1e-10,
-  partial.immunity.elder = 1e-10,
-  duration.latent = 1,
-  duration.infect.inf = 2,
-  multiplier.dur.sibpar = 0.5,
-  p.detect = 0.999,
-  seasonal_forcing_list = NULL
+  start_date = as.Date("2024-01-01"),
+  end_date = as.Date("2024-12-31"),
+  max_days = 365,
+  seasonal_forcing_list = NULL,
+  alpha_comm_by_role = 0.005,
+  beta1 = 0.3,
+  beta2 = 0.05,
+  delta = 0,
+  phi_by_role = c(adult = 1, child = 7, toddler = 7, elderly = 4),
+  kappa_by_role = c(adult = 1, child = 1.5, toddler = 1.5, elderly = 1),
+  latent_shape = 3,
+  latent_scale = 0.5,
+  infectious_shape = 3,
+  infectious_scale = 1,
+  resolve_shape = 1.5,
+  resolve_scale = 0.5,
+  peak_day = 1,
+  width = 4,
+  ptrans_threshold = 0.5,
+  detect_threshold_log10 = 1,
+  detect_threshold_Ct = 40,
+  surveillance_interval = 7,
+  test_daily = FALSE,
+  viral_testing = "viral load",
+  V_ref = 3,
+  V_rho = 2.5,
+  Ct_50 = 40,
+  Ct_delta = 2,
+  VL_params_list = default_VL_params,
+  Ct_params_list = default_Ct_params,
+  household_profile_list = default_household_profile,
+  verbose = FALSE
 )
 }
 \arguments{
 \item{n_households}{Integer; number of households.}
 
-\item{hh.size}{Integer or vector; household size(s).}
+\item{start_date, end_date}{\code{Date} study window.}
 
-\item{tests.per.week}{Integer; testing frequency (legacy).}
-
-\item{engine}{Character; one of \code{c("legacy","rsv_vl")}.}
-
-\item{simulation_function}{Function used by the legacy engine to simulate one
-household (defaults to \code{generate_synthetic_data_one}).}
-
-\item{Covariates}{Logical; include synthetic covariates (legacy).}
-
-\item{Covariates_list}{Character vector; names of covariates (legacy).}
-
-\item{Covariate_specifications}{Optional list; covariate generation controls (legacy).}
-
-\item{amplitude, phase}{Numeric seasonality knobs (legacy/upstream only).}
-
-\item{start_date, end_date}{\code{Date} study window (RSV/VL path and inference).}
-
-\item{max_days}{Optional integer; horizon to stamp as attribute
-\code{"test_days"} on each household.}
-
-\item{p.comm.base.infant.fix}{Numeric; base community risk (infant; legacy).}
-
-\item{p.comm.multiplier.sibling}{Numeric; community multiplier (sibling; legacy).}
-
-\item{p.comm.multiplier.parent}{Numeric; community multiplier (parent; legacy).}
-
-\item{p.comm.multiplier.elder}{Numeric; community multiplier (elder; legacy).}
-
-\item{p.hh.base.infant}{Numeric; base HH transmission (infant; legacy).}
-
-\item{p.hh.multiplier.sibling}{Numeric; HH multiplier (sibling; legacy).}
-
-\item{p.hh.multiplier.parent}{Numeric; HH multiplier (parent; legacy).}
-
-\item{p.hh.multiplier.elder}{Numeric; HH multiplier (elder; legacy).}
-
-\item{p.imm.base.sibling}{Numeric; baseline immunity (sibling; legacy).}
-
-\item{p.imm.base.parent}{Numeric; baseline immunity (parent; legacy).}
-
-\item{p.imm.base.elder}{Numeric; baseline immunity (elder; legacy).}
-
-\item{partial.immunity.infant}{Numeric; partial immunity (infant; legacy).}
-
-\item{partial.immunity.sibling}{Numeric; partial immunity (sibling; legacy).}
-
-\item{partial.immunity.parent}{Numeric; partial immunity (parent; legacy).}
-
-\item{partial.immunity.elder}{Numeric; partial immunity (elder; legacy).}
-
-\item{duration.latent}{Integer; latent duration (legacy).}
-
-\item{duration.infect.inf}{Integer; infectious duration (legacy).}
-
-\item{multiplier.dur.sibpar}{Numeric; duration multiplier for sibling/parent (legacy).}
-
-\item{p.detect}{Numeric; detection probability per test (legacy).}
+\item{max_days}{Integer; simulation horizon (days).}
 
 \item{seasonal_forcing_list}{Optional named list (\code{adult, child, elderly, toddler})
-for RSV/VL downstream use.}
+for seasonal forcing.}
+
+\item{alpha_comm_by_role}{Numeric; baseline community acquisition rate.}
+
+\item{beta1, beta2}{Numeric; transmission coefficients.}
+
+\item{delta}{Numeric; household size scaling exponent.}
+
+\item{phi_by_role}{Named numeric vector; susceptibility multipliers by role.}
+
+\item{kappa_by_role}{Named numeric vector; infectivity multipliers by role.}
+
+\item{latent_shape, latent_scale}{Numeric; gamma parameters for latent period.}
+
+\item{infectious_shape, infectious_scale}{Numeric; gamma parameters for infectious period.}
+
+\item{resolve_shape, resolve_scale}{Numeric; gamma parameters for resolution period.}
+
+\item{peak_day, width}{Numeric; infectivity profile parameters.}
+
+\item{ptrans_threshold}{Numeric; transmission potential threshold.}
+
+\item{detect_threshold_log10}{Numeric; viral load detection threshold in log10.}
+
+\item{detect_threshold_Ct}{Numeric; Ct value detection threshold.}
+
+\item{surveillance_interval}{Integer; days between scheduled tests.}
+
+\item{test_daily}{Logical; switch to daily testing after first detection.}
+
+\item{viral_testing}{Character; one of \code{"viral load"} or \code{"Ct"}.}
+
+\item{V_ref, V_rho}{Numeric; viral load reference and power for transmission.}
+
+\item{Ct_50, Ct_delta}{Numeric; Ct-based infectivity parameters.}
+
+\item{VL_params_list}{Named list; role-specific VL trajectory parameters.}
+
+\item{Ct_params_list}{Named list; role-specific Ct trajectory parameters.}
+
+\item{household_profile_list}{Named list; household composition probabilities.}
+
+\item{verbose}{Logical; print progress information.}
 }
 \value{
-If \code{engine="legacy"}: a list of per-household data frames (each may
-carry \code{attr(., "test_days")}). If \code{engine="rsv_vl"}: a long test-day
-data frame with attribute \code{"households"} holding the per-household list.
+A list with \code{hh_df} (stacked data frame), \code{households}
+(per-household list), and \code{diagnostic_df} (long testing records).
 }
 \description{
-Generates synthetic household data for downstream MLE or RSV/VL–Stan
-pipelines. Returns per-household data frames (legacy) or a long test-day
-table with an attached per-household list (RSV/VL).
+Generates synthetic household data for the RSV/VL–Stan pipeline.
+Returns a list with stacked data frame, per-household list, and
+long testing records (diagnostic_df).
 }

@@ -1,496 +1,376 @@
-#' Simulate households (legacy or RSV/VL engine)
+#' Simulate households (RSV/VL engine)
 #'
-#' Generates synthetic household data for downstream MLE or RSV/VL–Stan
-#' pipelines. Returns per-household data frames (legacy) or a long test-day
-#' table with an attached per-household list (RSV/VL).
+#' Generates synthetic household data for the RSV/VL–Stan pipeline.
+#' Returns a list with stacked data frame, per-household list, and
+#' long testing records (diagnostic_df).
 #'
 #' @param n_households Integer; number of households.
-#' @param hh.size Integer or vector; household size(s).
-#' @param tests.per.week Integer; testing frequency (legacy).
-#' @param engine Character; one of \code{c("legacy","rsv_vl")}.
-#' @param simulation_function Function used by the legacy engine to simulate one
-#'   household (defaults to \code{generate_synthetic_data_one}).
-#' @param Covariates Logical; include synthetic covariates (legacy).
-#' @param Covariates_list Character vector; names of covariates (legacy).
-#' @param Covariate_specifications Optional list; covariate generation controls (legacy).
-#' @param amplitude,phase Numeric seasonality knobs (legacy/upstream only).
-#' @param start_date,end_date \code{Date} study window (RSV/VL path and inference).
-#' @param max_days Optional integer; horizon to stamp as attribute
-#'   \code{"test_days"} on each household.
-#' @param p.comm.base.infant.fix Numeric; base community risk (infant; legacy).
-#' @param p.comm.multiplier.sibling Numeric; community multiplier (sibling; legacy).
-#' @param p.comm.multiplier.parent Numeric; community multiplier (parent; legacy).
-#' @param p.comm.multiplier.elder Numeric; community multiplier (elder; legacy).
-#' @param p.hh.base.infant Numeric; base HH transmission (infant; legacy).
-#' @param p.hh.multiplier.sibling Numeric; HH multiplier (sibling; legacy).
-#' @param p.hh.multiplier.parent Numeric; HH multiplier (parent; legacy).
-#' @param p.hh.multiplier.elder Numeric; HH multiplier (elder; legacy).
-#' @param p.imm.base.sibling Numeric; baseline immunity (sibling; legacy).
-#' @param p.imm.base.parent Numeric; baseline immunity (parent; legacy).
-#' @param p.imm.base.elder Numeric; baseline immunity (elder; legacy).
-#' @param partial.immunity.infant Numeric; partial immunity (infant; legacy).
-#' @param partial.immunity.sibling Numeric; partial immunity (sibling; legacy).
-#' @param partial.immunity.parent Numeric; partial immunity (parent; legacy).
-#' @param partial.immunity.elder Numeric; partial immunity (elder; legacy).
-#' @param duration.latent Integer; latent duration (legacy).
-#' @param duration.infect.inf Integer; infectious duration (legacy).
-#' @param multiplier.dur.sibpar Numeric; duration multiplier for sibling/parent (legacy).
-#' @param p.detect Numeric; detection probability per test (legacy).
+#' @param start_date,end_date \code{Date} study window.
+#' @param max_days Integer; simulation horizon (days).
 #' @param seasonal_forcing_list Optional named list (\code{adult, child, elderly, toddler})
-#'   for RSV/VL downstream use.
+#'   for seasonal forcing.
+#' @param alpha_comm_by_role Numeric; baseline community acquisition rate.
+#' @param beta1,beta2 Numeric; transmission coefficients.
+#' @param delta Numeric; household size scaling exponent.
+#' @param phi_by_role Named numeric vector; susceptibility multipliers by role.
+#' @param kappa_by_role Named numeric vector; infectivity multipliers by role.
+#' @param latent_shape,latent_scale Numeric; gamma parameters for latent period.
+#' @param infectious_shape,infectious_scale Numeric; gamma parameters for infectious period.
+#' @param resolve_shape,resolve_scale Numeric; gamma parameters for resolution period.
+#' @param peak_day,width Numeric; infectivity profile parameters.
+#' @param ptrans_threshold Numeric; transmission potential threshold.
+#' @param detect_threshold_log10 Numeric; viral load detection threshold in log10.
+#' @param detect_threshold_Ct Numeric; Ct value detection threshold.
+#' @param surveillance_interval Integer; days between scheduled tests.
+#' @param test_daily Logical; switch to daily testing after first detection.
+#' @param viral_testing Character; one of \code{"viral load"} or \code{"Ct"}.
+#' @param V_ref,V_rho Numeric; viral load reference and power for transmission.
+#' @param Ct_50,Ct_delta Numeric; Ct-based infectivity parameters.
+#' @param VL_params_list Named list; role-specific VL trajectory parameters.
+#' @param Ct_params_list Named list; role-specific Ct trajectory parameters.
+#' @param household_profile_list Named list; household composition probabilities.
+#' @param verbose Logical; print progress information.
 #'
-#' @return If \code{engine="legacy"}: a list of per-household data frames (each may
-#'   carry \code{attr(., "test_days")}). If \code{engine="rsv_vl"}: a long test-day
-#'   data frame with attribute \code{"households"} holding the per-household list.
+#' @return A list with \code{hh_df} (stacked data frame), \code{households}
+#'   (per-household list), and \code{diagnostic_df} (long testing records).
+#' @export
 simulate_households <- function(
     n_households,
-    hh.size,
-    tests.per.week = 1,
-    engine = c("legacy","rsv_vl"),
-
-    # legacy single-household simulator (one HH at a time)
-    simulation_function = generate_synthetic_data_one,
-
-    # legacy covariates
-    Covariates = FALSE,
-    Covariates_list = c("Vaccination status", "Antibody Level"),
-    Covariate_specifications = NULL,
-
-    # seasonality / dates
-    amplitude = 0,
-    phase = 0,
-    start_date = as.Date("2024-09-21"),
-    end_date   = as.Date("2025-04-17"),
-
-    # horizon tag for downstream grid (used to set attr 'test_days')
-    max_days = NULL,
-
-    # legacy infection / immunity / testing knobs
-    p.comm.base.infant.fix     = 0.002,
-    p.comm.multiplier.sibling  = 1,
-    p.comm.multiplier.parent   = 1,
-    p.comm.multiplier.elder    = 1,
-
-    p.hh.base.infant           = 0.2,
-    p.hh.multiplier.sibling    = 0.5267686,
-    p.hh.multiplier.parent     = 0.8008933,
-    p.hh.multiplier.elder      = 0.6008933,
-
-    p.imm.base.sibling         = 1e-10,
-    p.imm.base.parent          = 1e-10,
-    p.imm.base.elder           = 1e-10,
-    partial.immunity.infant    = 1e-10,
-    partial.immunity.sibling   = 1e-10,
-    partial.immunity.parent    = 1e-10,
-    partial.immunity.elder     = 1e-10,
-
-    duration.latent            = 1,
-    duration.infect.inf        = 2,
-    multiplier.dur.sibpar      = 0.5,
-    p.detect                   = 0.999,
-
-    # RSV/VL extras
-    seasonal_forcing_list = NULL
+    start_date = as.Date("2024-01-01"),
+    end_date   = as.Date("2024-12-31"),
+    max_days = 365,
+    seasonal_forcing_list = NULL,
+    alpha_comm_by_role = 5e-3,
+    beta1 = 0.3,
+    beta2 = 0.05,
+    delta = 0,
+    phi_by_role = c(adult = 1.0, child = 7.0, toddler = 7.0, elderly = 4.0),
+    kappa_by_role = c(adult = 1.0, child = 1.5, toddler = 1.5, elderly = 1.0),
+    latent_shape = 3,
+    latent_scale = 0.5,
+    infectious_shape = 3,
+    infectious_scale = 1,
+    resolve_shape = 1.5,
+    resolve_scale = 0.5,
+    peak_day = 1,
+    width = 4,
+    ptrans_threshold = 0.5,
+    detect_threshold_log10 = 1,
+    detect_threshold_Ct = 40,
+    surveillance_interval = 7,
+    test_daily = FALSE,
+    viral_testing = "viral load",
+    V_ref = 3,
+    V_rho = 2.5,
+    Ct_50 = 40,
+    Ct_delta = 2,
+    VL_params_list = default_VL_params,
+    Ct_params_list = default_Ct_params,
+    household_profile_list = default_household_profile,
+    verbose = FALSE
 ) {
-  engine <- match.arg(engine)
-
-  # utility: call fn with only the formals it accepts
-  call_with_formals <- function(fn, args) {
-    fm <- names(formals(fn))
-    do.call(fn, args[intersect(names(args), fm)])
-  }
-
-  # utility: ensure minimal columns + names
-  ensure_min_cols <- function(hh_df) {
-    # common person id name harmonization
-    if ("person_id" %in% names(hh_df) && !"individual_ID" %in% names(hh_df)) {
-      hh_df$individual_ID <- hh_df$person_id
-    } else if (!"individual_ID" %in% names(hh_df)) {
-      hh_df$individual_ID <- seq_len(nrow(hh_df))
-    }
-    need <- c("individual_ID", "role", "infection_status", "infectious_start", "infectious_end")
-    for (nm in need) if (!nm %in% names(hh_df)) hh_df[[nm]] <- NA
-    hh_df$infection_status <- as.integer(ifelse(is.na(hh_df$infection_status), 0L, hh_df$infection_status))
-    hh_df
-  }
-
-  if (engine == "legacy") {
-    # loop over households; inject the right id arg if needed
-    households <- vector("list", n_households)
-
-    # inspect which id name the simulator expects
-    sim_formals <- names(formals(simulation_function))
-    id_arg <- if ("household_id" %in% sim_formals) "household_id"
-    else if ("hh_id" %in% sim_formals) "hh_id"
-    else NULL
-
-    for (h in seq_len(n_households)) {
-      args_h <- list(
-        hh.size = hh.size,
-        tests.per.week = tests.per.week,
-        Covariates = Covariates,
-        Covariates_list = Covariates_list,
-        Covariate_specifications = Covariate_specifications,
-        amplitude = amplitude, phase = phase,
-        start_date = start_date, end_date = end_date,
-
-        p.comm.base.infant.fix    = p.comm.base.infant.fix,
-        p.comm.multiplier.sibling = p.comm.multiplier.sibling,
-        p.comm.multiplier.parent  = p.comm.multiplier.parent,
-        p.comm.multiplier.elder   = p.comm.multiplier.elder,
-
-        p.hh.base.infant          = p.hh.base.infant,
-        p.hh.multiplier.sibling   = p.hh.multiplier.sibling,
-        p.hh.multiplier.parent    = p.hh.multiplier.parent,
-        p.hh.multiplier.elder     = p.hh.multiplier.elder,
-
-        p.imm.base.sibling        = p.imm.base.sibling,
-        p.imm.base.parent         = p.imm.base.parent,
-        p.imm.base.elder          = p.imm.base.elder,
-        partial.immunity.infant   = partial.immunity.infant,
-        partial.immunity.sibling  = partial.immunity.sibling,
-        partial.immunity.parent   = partial.immunity.parent,
-        partial.immunity.elder    = partial.immunity.elder,
-
-        duration.latent           = duration.latent,
-        duration.infect.inf       = duration.infect.inf,
-        multiplier.dur.sibpar     = multiplier.dur.sibpar,
-        p.detect                  = p.detect
-      )
-      if (!is.null(id_arg)) args_h[[id_arg]] <- h
-
-      hh_df <- call_with_formals(simulation_function, args_h)
-      hh_df <- ensure_min_cols(hh_df)
-
-      # stamp test_days if we can infer a horizon
-      td <- if (!is.null(max_days)) as.integer(max_days) else {
-        # try to infer from infectious_end / infection_resolved
-        cand <- suppressWarnings(as.integer(c(hh_df$infectious_end, hh_df$infection_resolved)))
-        cmax <- suppressWarnings(max(cand, na.rm = TRUE))
-        if (is.finite(cmax) && cmax > 0) cmax else as.integer(end_date - start_date + 1L)
-      }
-      if (is.finite(td) && td > 0) attr(hh_df, "test_days") <- td
-
-      households[[h]] <- hh_df
-    }
-
-    return(households)
-  }
-
-  # RSV/VL path: produce households via the RSV/VL engine, then a long table
-  sim <- simulate_multiple_households_comm(
+  simulate_multiple_households_comm(
     n_households = n_households,
-    max_days = if (is.null(max_days)) 40L else as.integer(max_days),
-    seasonal_forcing_list = seasonal_forcing_list
-    # (other exposed RSV/VL knobs can be threaded here as needed)
+    alpha_comm_by_role = alpha_comm_by_role,
+    beta1 = beta1,
+    beta2 = beta2,
+    delta = delta,
+    phi_by_role = phi_by_role,
+    kappa_by_role = kappa_by_role,
+    latent_shape = latent_shape,
+    latent_scale = latent_scale,
+    infectious_shape = infectious_shape,
+    infectious_scale = infectious_scale,
+    resolve_shape = resolve_shape,
+    resolve_scale = resolve_scale,
+    peak_day = peak_day,
+    width = width,
+    max_days = max_days,
+    verbose = verbose,
+    seasonal_forcing_list = seasonal_forcing_list,
+    ptrans_threshold = ptrans_threshold,
+    detect_threshold_log10 = detect_threshold_log10,
+    detect_threshold_Ct = detect_threshold_Ct,
+    surveillance_interval = surveillance_interval,
+    test_daily = test_daily,
+    viral_testing = viral_testing,
+    V_ref = V_ref,
+    V_rho = V_rho,
+    Ct_50 = Ct_50,
+    Ct_delta = Ct_delta,
+    start_date = as.character(start_date),
+    VL_params_list = VL_params_list,
+    Ct_params_list = Ct_params_list,
+    household_profile_list = household_profile_list
   )
-  households <- sim$households
-  long_tests <- households_to_long_tests(households, seasonal_forcing_list)
-  # ensure 6th core col exists for episode utils downstream
-  if (!"community_risk" %in% names(long_tests)) long_tests$community_risk <- NA_real_
-  # attach the per-HH list for Stan branch
-  attr(long_tests, "households") <- households
-  return(long_tests)
 }
 
 
-
-#' Transmission potential as a function of viral load
+#' Simulate a single household with community and within-household transmission
 #'
-#' Computes a saturating transmission potential on \[0,1] from log10 viral load.
+#' Simulates infection dynamics for one household over a specified time horizon,
+#' incorporating community acquisition, within-household transmission based on
+#' viral load or Ct values, and testing/detection logic.
 #'
-#' @param VL Numeric vector; log10 viral load.
-#' @param n,p_v,K,Vm,sai Numeric scalars; model constants.
-#'
-#' @return Numeric vector of transmission potentials.
-p_transmission <- function(VL, n, p_v, K, Vm, sai) {
-  pot <- 1 - exp(-p_v * sai * Vm * VL^n / (VL^n + K^n))
-  pot[is.na(pot)] <- 0
-  pot
-}
-
-
-
-#' Gaussian-like infectivity profile (normalized)
-#'
-#' Bell-shaped infectivity profile scaled to have maximum 1.
-#'
-#' @param t Integer vector of times (e.g., days since infectious onset).
-#' @param peak_day Integer; peak day.
-#' @param width Numeric; spread around the peak.
-#'
-#' @return Numeric vector in \[0,1] of length \code{t}.
-g_rescaled <- function(t, peak_day, width) {
-  if (length(t) == 0) return(numeric(0))
-  vals <- exp(-0.5 * ((t - peak_day)/width)^2)
-  mx <- max(vals, na.rm = TRUE)
-  if (!is.finite(mx) || mx <= 0) return(vals)
-  vals / mx
-}
-
-
-
-#' Simulate a log10 viral-load trajectory
-#'
-#' Generates a unimodal log10 viral-load curve given peak level/day and
-#' growth/decay rates.
-#'
-#' @param t Integer vector; days relative to infection.
-#' @param v_p Numeric; peak log10 VL.
-#' @param t_p Integer; day of peak.
-#' @param lambda_g,lambda_d Numeric; growth/decay rates.
-#'
-#' @return Numeric vector of log10 VL at times \code{t}.
-simulate_viral_load_trajectory <- function(t, v_p, t_p, lambda_g, lambda_d) {
-  vt <- 2 * 10^v_p / (exp(-lambda_g * (t - t_p)) + exp(lambda_d * (t - t_p)))
-  log10(vt)
-}
-
-
-
-#' Default viral-load parameter means by role
-#'
-#' Role-specific means used to generate viral-load trajectories.
-#'
-#' @format A named list with elements \code{adult}, \code{child}, \code{toddler},
-#'   \code{elderly}; each is a list with \code{v_p}, \code{t_p}, \code{lambda_g},
-#'   \code{lambda_d}.
-#' @keywords internal
-#' @noRd
-VL_params <- list(
-  adult   = list(v_p = 4.14, t_p = 5.09, lambda_g = 2.31, lambda_d = 2.71),
-  child   = list(v_p = 5.84, t_p = 3.09, lambda_g = 2.82, lambda_d = 1.01),
-  toddler = list(v_p = 5.84, t_p = 3.09, lambda_g = 2.82, lambda_d = 1.01),
-  elderly = list(v_p = 2.95, t_p = 5.10, lambda_g = 3.15, lambda_d = 0.87)
-)
-
-
-
-#' Draw role-specific viral-load parameters
-#'
-#' Returns the parameter set used to generate a viral-load trajectory for a role.
-#'
-#' @param role Character; one of \code{"adult"}, \code{"child"}, \code{"toddler"}, \code{"elderly"}.
-#' @return A list with \code{v_p}, \code{t_p}, \code{lambda_g}, \code{lambda_d}.
-#' @keywords internal
-#' @noRd
-draw_random_VL_params <- function(role) {
-  p <- VL_params[[role]]
-  if (is.null(p)) stop("Unknown role in VL_params: ", role)
-  list(v_p = p$v_p, t_p = p$t_p, lambda_g = p$lambda_g, lambda_d = p$lambda_d)
-}
-
-
-
-#' Cosine seasonal multiplier (non-negative)
-#'
-#' Cosine-based seasonal multiplier bounded below by 0.
-#'
-#' @param day Integer vector of days.
-#' @param peak_day Integer; day of maximum.
-#' @param amplitude Numeric; cosine amplitude.
-#' @param period Integer; period length.
-#'
-#' @return Numeric vector of multipliers.
-seasonal_cosine <- function(day, peak_day = 350, amplitude = 0.8, period = 365) {
-  pmax(1 + amplitude * cos(2 * pi * (day - peak_day) / period), 0)
-}
-
-
-
-#' Generate a simple household role composition
-#'
-#' Samples a household (size 3–5) with at least one child and two adults,
-#' optionally adding elderly/toddler roles.
-#'
-#' @return Character vector of role labels.
-generate_household_roles <- function() {
-  n <- sample(3:5, 1)
-  roles <- c(rep("child", 1), rep("adult", 2))
-  remaining <- n - length(roles)
-  if (remaining > 0) {
-    n_elderly <- sample(0:min(2, remaining), 1)
-    roles <- c(roles, rep("elderly", n_elderly))
-    remaining <- remaining - n_elderly
-  }
-  if (remaining > 0) {
-    roles <- c(roles, sample(c("toddler"), remaining, replace = TRUE))
-  }
-  sample(roles)
-}
-
-
-
-#' Simulate one household (RSV/VL engine)
-#'
-#' Simulates infection events, infectious periods, detection, and VL trajectories
-#' for a single household over a fixed horizon.
-#'
-#' @param hh_id Household identifier.
-#' @param roles Character vector of roles (one per person).
-#' @param alpha_comm_by_role Numeric; baseline community hazard (scalar).
-#' @param beta1,beta2,delta,rho,V_ref Numeric; transmission constants.
-#' @param phi_by_role,kappa_by_role Named numeric vectors; susceptibility and
-#'   infectivity multipliers by role.
-#' @param latent_shape,latent_scale,infectious_shape,infectious_scale Numeric;
-#'   gamma parameters for latent/infectious durations.
-#' @param peak_day,width Numeric; infectivity profile controls.
+#' @param hh_id Character or integer; household identifier.
+#' @param roles Character vector; roles for each household member.
+#' @param alpha_comm_by_role Numeric; baseline community acquisition rate.
+#' @param beta1,beta2 Numeric; transmission coefficients.
+#' @param delta Numeric; household size scaling exponent.
+#' @param phi_by_role Named numeric vector; susceptibility multipliers by role.
+#' @param kappa_by_role Named numeric vector; infectivity multipliers by role.
+#' @param latent_shape,latent_scale Numeric; gamma parameters for latent period.
+#' @param infectious_shape,infectious_scale Numeric; gamma parameters for infectious period.
+#' @param resolve_shape,resolve_scale Numeric; gamma parameters for resolution period.
+#' @param peak_day,width Numeric; infectivity profile parameters.
 #' @param max_days Integer; simulation horizon (days).
-#' @param test_weekly_before_detection Logical; weekly testing before first detection.
-#' @param perfect_detection Logical; perfect detection on test days.
-#' @param contact_mat Optional square contact matrix (no self-contact).
-#' @param verbose Logical; print progress.
-#' @param seasonal_forcing_list Optional list of length 4 with role-specific
-#'   seasonal multipliers (length \code{max_days}).
+#' @param perfect_detection Logical; assume perfect detection when VL/Ct exceeds threshold.
+#' @param contact_mat Optional matrix; contact structure within household.
+#' @param verbose Logical; print debug information.
+#' @param seasonal_forcing_list Named list; seasonal forcing vectors by role.
+#' @param ptrans_threshold Numeric; transmission potential threshold.
+#' @param detect_threshold_log10 Numeric; VL detection threshold (log10).
+#' @param detect_threshold_Ct Numeric; Ct detection threshold.
+#' @param surveillance_interval Integer; days between scheduled tests.
+#' @param test_daily Logical; switch to daily testing after first detection.
+#' @param viral_testing Character; \code{"viral load"} or \code{"Ct"}.
+#' @param V_ref,V_rho Numeric; viral load reference and power for transmission.
+#' @param Ct_50,Ct_delta Numeric; Ct-based infectivity parameters.
+#' @param VL_params_input Named list; role-specific VL parameters.
+#' @param Ct_params_input Named list; role-specific Ct parameters.
 #'
-#' @return A data frame with columns
-#'   \code{hh_id}, \code{person_id}, \code{role}, \code{infection_time},
-#'   \code{infectious_start}, \code{infectious_end}, \code{detection_time},
-#'   \code{infection_resolved}, plus list-columns \code{vl_full_trajectory},
-#'   \code{viral_loads_test_days}. Attributes \code{test_days} and \code{params}
-#'   are attached.
+#' @return A data frame with one row per person containing infection timing,
+#'   detection, viral load trajectories, and testing results.
+#' @keywords internal
 simulate_one_household_comm <- function(
     hh_id,
     roles,
     alpha_comm_by_role,
-    beta1 = 0.06, beta2 = 1e-7, delta = 1, rho = 3, V_ref = 1e7,
-    phi_by_role = c(adult = 1.0, child = 1.1, elderly = 0.8, toddler = 1.2),
-    kappa_by_role = c(adult = 1.0, child = 1.1, elderly = 0.7, toddler = 1.2),
-    latent_shape = 2, latent_scale = 1,
-    infectious_shape = 2, infectious_scale = 2,
-    peak_day = 2, width = 2,
-    max_days = 40,
-    test_weekly_before_detection = TRUE,
+    beta1 = 0.3,
+    beta2 = 0.05,
+    delta = 0,
+    phi_by_role = c(adult = 1.0, child = 7.0, toddler = 7.0, elderly = 4.0),
+    kappa_by_role = c(adult = 1.0, child = 1.5, toddler = 1.5, elderly = 1.0),
+    latent_shape = 3,
+    latent_scale = 0.5,
+    infectious_shape = 3,
+    infectious_scale = 1,
+    resolve_shape = 1.5,
+    resolve_scale = 0.5,
+    peak_day = 1,
+    width = 4,
+    max_days = 365,
     perfect_detection = TRUE,
     contact_mat = NULL,
     verbose = FALSE,
-    seasonal_forcing_list = NULL
+    seasonal_forcing_list = NULL,
+    ptrans_threshold = 0.5,
+    detect_threshold_log10 = 1,
+    detect_threshold_Ct = 40,
+    surveillance_interval = 7,
+    test_daily = FALSE,
+    viral_testing = "viral load",
+    V_ref = 3,
+    V_rho = 2.5,
+    Ct_50 = 40,
+    Ct_delta = 2,
+    VL_params_input = default_VL_params,
+    Ct_params_input = default_Ct_params
 ) {
+
   n <- length(roles)
-  infection_time <- infectious_start <- infectious_end <- detection_time <- infection_resolved <- rep(NA_integer_, n)
-  vl_trajs <- vector("list", n)
+  infection_time <- rep(NA_integer_, n)
+  infectious_start <- rep(NA_integer_, n)
+  infectious_end <- rep(NA_integer_, n)
+  detection_time <- rep(NA_integer_, n)
+  infection_resolved <- rep(NA_integer_, n)
   viral_loads_log10 <- vector("list", n)
+  vl_trajs <- vector("list", n)
 
-  # durations
-  latent_period <- pmax(1, ceiling(stats::rgamma(n, shape = latent_shape, scale = latent_scale)))
-  infectious_period <- pmax(1, ceiling(stats::rgamma(n, shape = infectious_shape, scale = infectious_scale)))
+  latent_period <- pmax(1, ceiling(rgamma(n, shape = latent_shape, scale = latent_scale)))
+  infectious_period <- pmax(1, ceiling(rgamma(n, shape = infectious_shape, scale = infectious_scale)))
+  resolve_period <- pmax(1, ceiling(rgamma(n, shape = resolve_shape, scale = resolve_scale)))
 
-  # contact matrix
   if (is.null(contact_mat)) {
-    contact_mat <- matrix(1, n, n); diag(contact_mat) <- 0
+    contact_mat <- matrix(1, n, n)
+    diag(contact_mat) <- 0
   }
 
-  # infectivity profile (Gaussian-like, normalized)
-  g_profile <- exp(-0.5 * ((1:max_days - peak_day)/width)^2)
-  g_profile <- g_profile / max(g_profile)
+  if (is.null(seasonal_forcing_list)) {
+    seasonal_forcing_list <- list(
+      adult = rep(0.1, max_days),
+      child = rep(0.1, max_days),
+      elderly = rep(0.1, max_days),
+      toddler = rep(0.1, max_days)
+    )
+  }
 
   household_detected <- FALSE
+  index_case_id <- NA_integer_
 
-  # simulate days 1..max_days
+  g_profile <- exp(-0.5 * ((1:max_days - peak_day) / width)^2)
+  g_profile <- g_profile / max(g_profile)
+
   for (t in 1:max_days) {
-    test_today <- if (test_weekly_before_detection && !household_detected) ((t - 1) %% 7 == 0) else TRUE
+    is_scheduled_day <- ((t - 1) %% surveillance_interval == 0)
 
-    # attempt infection for susceptibles
+    if (!household_detected) {
+      test_today <- is_scheduled_day
+    } else {
+      test_today <- if (test_daily) TRUE else is_scheduled_day
+    }
+
+    p_jt_vec <- rep(0, n)
+
     for (j in seq_len(n)) {
       if (!is.na(infection_time[j]) && infection_time[j] < t) next
 
-      # household hazard from infectors i -> j
       lambda_house_j <- 0
       for (i in seq_len(n)) {
         if (i == j) next
-        if (is.na(infection_time[i]) || is.na(infectious_start[i]) || is.na(infectious_end[i])) next
-        if (infectious_start[i] >= t) next
+        if (is.na(infection_time[i])) next
+        if (is.na(infectious_start[i]) || is.na(infectious_end[i])) next
+        if (t < infectious_start[i] || t > infectious_end[i]) next
 
-        tau <- t - infectious_start[i]
-        gval <- if (tau >= 1 && tau <= length(g_profile)) g_profile[tau] else 0
-
-        if (is.null(vl_trajs[[i]])) {
-          t_seq <- seq(infection_time[i], infection_resolved[i])
-          t_rel <- t_seq - infection_time[i]
-          p <- draw_random_VL_params(roles[i])
-          vl_trajs[[i]] <- simulate_viral_load_trajectory(t_rel, p$v_p, p$t_p, p$lambda_g, p$lambda_d)
-        }
-
+        tau <- t - infectious_start[i] + 1
+        gval <- if (tau >= 1 && tau <= length(g_profile)) 1 else 0
         rel_day_idx <- t - infection_time[i] + 1
-        log10V <- if (rel_day_idx >= 1 && rel_day_idx <= length(vl_trajs[[i]])) vl_trajs[[i]][rel_day_idx] else -5
-        V_it <- ifelse(is.na(log10V), -5, log10V)
 
-        scaling_n <- (1 / max(n, 1))^delta
-        term1 <- beta1 * gval
-        term2 <- beta2 * p_transmission(VL = V_it, n = 3.91, p_v = .83e-2, K = 5.39, Vm = 6.59, sai = 4.57)
-        term1[is.na(term1)] <- 0; term2[is.na(term2)] <- 0
-        h_ij_t <- scaling_n * (term1 + term2)
+        if (viral_testing == "viral load") {
+          log10V <- if (!is.na(infection_time[i]) && rel_day_idx >= 1 &&
+                        !is.null(vl_trajs[[i]]) && rel_day_idx <= length(vl_trajs[[i]])) {
+            vl_trajs[[i]][rel_day_idx]
+          } else { 0 }
 
-        lambda_house_j <- lambda_house_j + kappa_by_role[roles[i]] * h_ij_t * contact_mat[j, i]
+          V_it <- max(0, ifelse(is.na(log10V), 0, log10V))
+          scaling_n <- (1 / max(n, 1))^delta
+          term1 <- beta1 * gval
+          term2 <- beta2 * (V_it / V_ref)^V_rho
+          h_ij_t <- scaling_n * kappa_by_role[roles[i]] * (term1 + term2)
+          lambda_house_j <- lambda_house_j + h_ij_t * contact_mat[j, i]
+
+        } else if (viral_testing == "Ct") {
+          log10V <- if (!is.na(infection_time[i]) && rel_day_idx >= 1 &&
+                        !is.null(vl_trajs[[i]]) && rel_day_idx <= length(vl_trajs[[i]])) {
+            vl_trajs[[i]][rel_day_idx]
+          } else { 45 }
+
+          V_it <- ifelse(is.na(log10V), 45, log10V)
+          scaling_n <- (1 / max(n, 1))^delta
+          term1 <- beta1 * gval
+          term2 <- beta2 * 1 / (1 + exp((V_it - Ct_50) / Ct_delta))
+          h_ij_t <- scaling_n * kappa_by_role[roles[i]] * (term1 + term2)
+          lambda_house_j <- lambda_house_j + h_ij_t * contact_mat[j, i]
+        }
       }
 
-      # community + household hazard
-      if (is.null(seasonal_forcing_list)) {
-        season_mult_j <- 1
-      } else {
-        season_mult_j <- seasonal_forcing_list[[roles[j]]][t]
-      }
-      alpha_comm_j <- alpha_comm_by_role * season_mult_j
-      lambda_jt <- phi_by_role[roles[j]] * (alpha_comm_j + lambda_house_j)
+      alpha_base_j <- alpha_comm_by_role
+      season_mult_j <- seasonal_forcing_list[[roles[j]]]
+      alpha_comm_j_baseline <- alpha_base_j * season_mult_j[min(t, length(season_mult_j))]
+      lambda_jt <- phi_by_role[roles[j]] * (alpha_comm_j_baseline + lambda_house_j)
       lambda_jt <- pmin(pmax(lambda_jt, 0), 1e6)
       p_jt <- 1 - exp(-lambda_jt)
       p_jt <- pmin(pmax(p_jt, 1e-20), 1 - 1e-20)
 
-      if (is.na(infection_time[j]) && stats::runif(1) < p_jt) {
-        infection_time[j]   <- t
-        infectious_start[j] <- pmin(infection_time[j] + latent_period[j], max_days)
-        infectious_end[j]   <- pmin(infectious_start[j] + infectious_period[j] - 1, max_days)
-        infection_resolved[j] <- pmin(infectious_end[j] + 1, max_days)
+      if (is.na(infection_time[j])) p_jt_vec[j] <- p_jt
+    }
 
-        t_seq <- seq(infection_time[j], infection_resolved[j])
-        t_rel <- t_seq - infection_time[j]
-        p <- draw_random_VL_params(roles[j])
+    new_infections <- runif(n) < p_jt_vec
+    for (j in which(new_infections)) {
+      if (is.na(index_case_id)) index_case_id <- j
+      infection_time[j] <- t
+      t_seq <- seq(1, 20)
+      t_rel <- t_seq - 1
+
+      if (viral_testing == "viral load") {
+        p <- draw_random_VL_params(roles[j], VL_params_input)
         vl_trajs[[j]] <- simulate_viral_load_trajectory(t_rel, p$v_p, p$t_p, p$lambda_g, p$lambda_d)
+        if (!is.null(vl_trajs[[j]]) && length(vl_trajs[[j]]) > 0) {
+          ptrans_vec <- (vl_trajs[[j]] / V_ref)^V_rho
+          inf_from_vl_idx <- which(ptrans_vec > ptrans_threshold)
+        }
+      } else {
+        p <- draw_random_Ct_params(roles[j], Ct_params_input)
+        vl_trajs[[j]] <- simulate_Ct_trajectory(t_rel, p$Cpeak, p$r, p$d, p$t_peak)
+        if (!is.null(vl_trajs[[j]]) && length(vl_trajs[[j]]) > 0) {
+          infectivity_vec <- 1 / (1 + exp((vl_trajs[[j]] - Ct_50) / Ct_delta))
+          inf_from_vl_idx <- which(infectivity_vec > ptrans_threshold)
+        }
+      }
+
+      if (exists("inf_from_vl_idx") && length(inf_from_vl_idx) > 0) {
+        inf_start_from_vl <- infection_time[j] + min(inf_from_vl_idx) - 1
+        inf_end_from_vl <- infection_time[j] + max(inf_from_vl_idx) - 1
+        infectious_start[j] <- pmax(1, pmin(inf_start_from_vl, max_days))
+        infectious_end[j] <- pmax(1, pmin(inf_end_from_vl, max_days))
+      } else {
+        infectious_start[j] <- NA_integer_
+        infectious_end[j] <- NA_integer_
+      }
+
+      if (!is.na(infectious_end[j])) {
+        infection_resolved[j] <- pmin(infectious_end[j] + resolve_period[j], max_days)
+      } else {
+        infection_resolved[j] <- pmin(infection_time[j] + resolve_period[j], max_days)
       }
     }
 
-    # detection
     if (test_today) {
       for (i in seq_len(n)) {
-        if (is.na(infection_time[i]) || is.na(infectious_start[i]) || is.na(infectious_end[i])) next
-        if (t < infectious_start[i] || t > infectious_end[i]) next
-        if (is.na(detection_time[i]) && perfect_detection) {
-          detection_time[i] <- t
-          household_detected <- TRUE
+        if (is.na(infection_time[i])) next
+        vl_rel_idx <- t - infection_time[i] + 1
+        val_today <- NA_real_
+        if (!is.null(vl_trajs[[i]]) && vl_rel_idx >= 1 && vl_rel_idx <= length(vl_trajs[[i]])) {
+          val_today <- vl_trajs[[i]][vl_rel_idx]
+        }
+
+        if (is.na(detection_time[i]) && perfect_detection && !is.na(val_today)) {
+          is_positive <- FALSE
+          if (viral_testing == "viral load") {
+            if (val_today >= detect_threshold_log10) is_positive <- TRUE
+          } else {
+            if (val_today <= detect_threshold_Ct) is_positive <- TRUE
+          }
+          if (is_positive) {
+            detection_time[i] <- t
+            household_detected <- TRUE
+          }
         }
       }
     }
   }
 
-  # ensure detection assigned for any infected without it
-  for (i in seq_len(n)) {
-    if (!is.na(infection_time[i]) && is.na(detection_time[i])) {
-      detection_time[i] <- if (!is.na(infectious_start[i]) && infectious_start[i] <= max_days) infectious_start[i] else infection_time[i]
-    }
-  }
-
-  # test schedule: weekly until first detection, then daily
+  # Generate test days for output
   first_det <- if (all(is.na(detection_time))) NA_integer_ else min(detection_time, na.rm = TRUE)
   test_days <- integer(0)
+
   for (d in seq_len(max_days)) {
-    if (!is.na(first_det)) {
-      if (d < first_det) { if ((d - 1) %% 7 == 0) test_days <- c(test_days, d) } else test_days <- c(test_days, d)
+    is_scheduled <- ((d - 1) %% surveillance_interval == 0)
+    is_post_detection <- !is.na(first_det) && d >= first_det
+
+    if (is_post_detection) {
+      if (test_daily) {
+        test_days <- c(test_days, d)
+      } else {
+        if (is_scheduled) test_days <- c(test_days, d)
+      }
     } else {
-      if ((d - 1) %% 7 == 0) test_days <- c(test_days, d)
+      if (is_scheduled) test_days <- c(test_days, d)
     }
   }
 
-  # test-day VLs (NA for non-infectious days)
   for (i in seq_len(n)) {
     if (is.null(vl_trajs[[i]]) || all(is.na(vl_trajs[[i]]))) {
-      viral_loads_log10[[i]] <- -5
+      viral_loads_log10[[i]] <- if (viral_testing == "viral load") 0 else 45
     } else {
-      vals <- vapply(test_days, function(dd) {
-        if (is.na(infectious_start[i]) || is.na(infectious_end[i])) return(-5)
-        if (dd < infectious_start[i] || dd > infectious_end[i]) return(-5)
+      vals <- sapply(test_days, function(dd) {
+        if (is.na(infection_time[i]) || dd < infection_time[i] || dd > infection_resolved[i]) {
+          return(if (viral_testing == "viral load") 0 else 45)
+        }
         rel_day <- dd - infection_time[i] + 1
-        if (rel_day <= length(vl_trajs[[i]])) vl_trajs[[i]][rel_day] else -5
-      }, numeric(1))
+        if (rel_day >= 1 && rel_day <= length(vl_trajs[[i]])) return(vl_trajs[[i]][rel_day])
+        else return(if (viral_testing == "viral load") 0 else 45)
+      })
       names(vals) <- as.character(test_days)
       viral_loads_log10[[i]] <- vals
     }
@@ -507,159 +387,153 @@ simulate_one_household_comm <- function(
     infection_resolved = ifelse(is.infinite(infection_resolved), NA_integer_, infection_resolved),
     stringsAsFactors = FALSE
   )
-  hh_df$vl_full_trajectory   <- vl_trajs
+
+  hh_df$vl_full_trajectory <- vl_trajs
   hh_df$viral_loads_test_days <- viral_loads_log10
   attr(hh_df, "test_days") <- test_days
-  attr(hh_df, "params") <- list(beta1 = beta1, beta2 = beta2, delta = delta, rho = rho, V_ref = V_ref)
+  attr(hh_df, "params") <- list(beta1 = beta1, beta2 = beta2, delta = delta, V_rho = V_rho, V_ref = V_ref)
   hh_df
 }
 
 
-
-#' Simulate multiple households (RSV/VL engine)
+#' Simulate multiple households with community transmission
 #'
-#' Runs \code{\link{simulate_one_household_comm}} across households and returns
-#' both the stacked data frame and the per-household list.
+#' Wrapper that calls \code{\link{simulate_one_household_comm}} for each household
+#' and assembles results into a combined data frame and diagnostic testing records.
 #'
-#' @param n_households Integer; number of households.
 #' @inheritParams simulate_one_household_comm
+#' @param n_households Integer; number of households to simulate.
+#' @param start_date Character or Date; start date for actual calendar dates.
+#' @param VL_params_list Named list; role-specific VL parameters.
+#' @param Ct_params_list Named list; role-specific Ct parameters.
+#' @param household_profile_list Named list; household composition probabilities.
 #'
-#' @return A list with:
-#' \describe{
-#'   \item{\code{hh_df}}{Stacked data frame across households.}
-#'   \item{\code{households}}{List of per-household data frames.}
-#' }
+#' @return A list with \code{hh_df}, \code{households}, and \code{diagnostic_df}.
+#' @keywords internal
 simulate_multiple_households_comm <- function(
-    n_households = 200,
+    n_households,
     alpha_comm_by_role = 5e-3,
-    beta1 = 0.06, beta2 = 1e-7, delta = 1, rho = 3, V_ref = 1e7,
-    phi_by_role = c(adult = 1.0, child = 1.1, elderly = 0.8, toddler = 1.2),
-    kappa_by_role = c(adult = 1.0, child = 1.1, elderly = 0.7, toddler = 1.2),
-    latent_shape = 2, latent_scale = 1,
-    infectious_shape = 2, infectious_scale = 2,
-    peak_day = 2, width = 2,
-    max_days = 40, verbose = FALSE,
-    seasonal_forcing_list = NULL
+    beta1 = 0.3,
+    beta2 = 0.05,
+    delta = 0,
+    phi_by_role = c(adult = 1.0, child = 7.0, toddler = 7.0, elderly = 4.0),
+    kappa_by_role = c(adult = 1.0, child = 1.5, toddler = 1.5, elderly = 1.0),
+    latent_shape = 3,
+    latent_scale = 0.5,
+    infectious_shape = 3,
+    infectious_scale = 1,
+    resolve_shape = 1.5,
+    resolve_scale = 0.5,
+    peak_day = 1,
+    width = 4,
+    max_days = 365,
+    verbose = FALSE,
+    seasonal_forcing_list = NULL,
+    ptrans_threshold = 0.5,
+    detect_threshold_log10 = 1,
+    detect_threshold_Ct = 40,
+    surveillance_interval = 7,
+    test_daily = FALSE,
+    viral_testing = "viral load",
+    V_ref = 3,
+    V_rho = 2.5,
+    Ct_50 = 40,
+    Ct_delta = 2,
+    start_date = "2024-01-01",
+    VL_params_list = default_VL_params,
+    Ct_params_list = default_Ct_params,
+    household_profile_list = default_household_profile
 ) {
+
+  start_date_obj <- as.Date(start_date)
   households <- vector("list", n_households)
+
   for (h in seq_len(n_households)) {
-    roles <- generate_household_roles()
-    households[[h]] <- simulate_one_household_comm(
-      hh_id = paste0("HH", h), roles = roles,
+    roles <- generate_household_roles(household_profile_list)
+
+    hh <- simulate_one_household_comm(
+      hh_id = paste0("HH", h),
+      roles = roles,
       alpha_comm_by_role = alpha_comm_by_role,
-      beta1 = beta1, beta2 = beta2, delta = delta, rho = rho, V_ref = V_ref,
+      beta1 = beta1, beta2 = beta2, delta = delta,
       phi_by_role = phi_by_role, kappa_by_role = kappa_by_role,
       latent_shape = latent_shape, latent_scale = latent_scale,
       infectious_shape = infectious_shape, infectious_scale = infectious_scale,
-      peak_day = peak_day, width = width,
-      max_days = max_days, verbose = verbose,
-      seasonal_forcing_list = seasonal_forcing_list
+      resolve_shape = resolve_shape, resolve_scale = resolve_scale,
+      peak_day = peak_day, width = width, max_days = max_days,
+      verbose = verbose, seasonal_forcing_list = seasonal_forcing_list,
+      ptrans_threshold = ptrans_threshold,
+      detect_threshold_log10 = detect_threshold_log10,
+      detect_threshold_Ct = detect_threshold_Ct,
+      surveillance_interval = surveillance_interval,
+      test_daily = test_daily, viral_testing = viral_testing,
+      V_ref = V_ref, V_rho = V_rho, Ct_50 = Ct_50, Ct_delta = Ct_delta,
+      VL_params_input = VL_params_list, Ct_params_input = Ct_params_list
     )
+    households[[h]] <- hh
   }
+
   hh_df <- do.call(rbind, households)
   rownames(hh_df) <- NULL
-  list(hh_df = hh_df, households = households)
-}
 
+  # Generate diagnostic DataFrame
+  all_records <- list()
+  counter <- 1
 
+  for (h_idx in seq_along(households)) {
+    hh <- households[[h_idx]]
+    hh_id_val <- hh$hh_id[1]
+    test_days <- attr(hh, "test_days")
 
-#' Normalize role labels to child, toddler, adult, elderly
-#'
-#' Maps common variants (e.g., \code{"infant" -> "toddler"}, \code{"sibling" -> "child"}).
-#'
-#' @param x Character vector of role labels.
-#' @return Character vector of normalized labels.
-#' @keywords internal
-.norm_role <- function(x) {
-  x <- tolower(trimws(as.character(x)))
+    if (length(test_days) == 0) next
 
-  # map various synonyms to the 4 canonical buckets
-  x[x == "infant"]  <- "toddler"
-  x[x == "baby"]    <- "toddler"
+    n_people <- nrow(hh)
+    for (i in 1:n_people) {
+      p_id <- hh$person_id[i]
+      role <- hh$role[i]
+      raw_vals <- hh$viral_loads_test_days[[i]]
 
-  x[x == "sibling"] <- "child"
-  x[x == "kid"]     <- "child"
-  # already "child" stays "child"
+      sample_vals <- if (length(raw_vals) == length(test_days)) raw_vals else rep(raw_vals[1], length(test_days))
 
-  x[x == "parent"]  <- "adult"
-  x[x == "mother"]  <- "adult"
-  x[x == "father"]  <- "adult"
-  # already "adult" stays "adult"
+      test_result <- if (viral_testing == "viral load") {
+        as.integer(sample_vals >= detect_threshold_log10)
+      } else {
+        as.integer(sample_vals <= detect_threshold_Ct)
+      }
 
-  x[x == "elder"]   <- "elderly"
-  x[x == "grandparent"] <- "elderly"
-  # already "elderly" stays "elderly"
+      actual_dates <- start_date_obj + (test_days - 1)
 
-  x
-}
+      person_df <- data.frame(
+        hh_id = hh_id_val,
+        person_id = p_id,
+        role = role,
+        sample_date = actual_dates,
+        day_index = test_days,
+        pcr_sample = as.numeric(sample_vals),
+        test_result = test_result,
+        stringsAsFactors = FALSE
+      )
 
-
-
-#' Extract index-case roles from simulated households
-#'
-#' Returns the role of the earliest infected individual (index case) per household.
-#'
-#' @param households List of household data frames with \code{infection_time} and \code{role}.
-#' @return Character vector of index roles (or \code{NA_character_} if no infections).
-#' @keywords internal
-.get_index_roles_from_households <- function(households) {
-  sapply(households, function(hh) {
-    if (all(is.na(hh$infection_time))) return(NA_character_)
-    tmin <- min(hh$infection_time, na.rm = TRUE)
-    # choose the earliest infected person; if tie, first in row order
-    idxs <- which(!is.na(hh$infection_time) & hh$infection_time == tmin)
-    hh$role[idxs[1]]
-  })
-}
-
-
-
-#' Validate user-supplied long data for legacy MLE
-#'
-#' Ensures the presence of required columns and coerces \code{test_date} to
-#' integer day indices when given as \code{Date}.
-#'
-#' @param user_data Long table with one row per person-day.
-#' @param start_date \code{Date} defining day 1 when \code{test_date} is a \code{Date}.
-#' @return A validated/coerced data frame.
-#' @keywords internal
-.validate_user_data_mle <- function(user_data, start_date) {
-  required <- c("HH", "individual_ID", "role",
-                "test_date", "infection_status", "community_risk")
-  missing <- setdiff(required, names(user_data))
-
-  if (length(missing) > 0L) {
-    stop(
-      paste0(
-        "For estimation_method = 'mle', `user_data` must be a long household-testing table\n",
-        "with one row per person-day and at least the columns:\n",
-        "  HH, individual_ID, role, test_date, infection_status, community_risk.\n",
-        "The following required columns are missing:\n  ",
-        paste(missing, collapse = ", "), "\n\n",
-        "Please reformat your data so that each row is one individual on one test_date,\n",
-        "with infection_status (0/1) and community_risk recorded."
-      ),
-      call. = FALSE
-    )
-  }
-
-  # Coerce test_date if it's a Date
-  if (inherits(user_data$test_date, "Date")) {
-    if (missing(start_date) || is.null(start_date)) {
-      stop("When `test_date` is a Date, please supply `start_date` to define day 1.",
-           call. = FALSE)
+      all_records[[counter]] <- person_df
+      counter <- counter + 1
     }
-    user_data$test_date <- as.integer(user_data$test_date - start_date) + 1L
   }
 
-  user_data
+  diagnostic_df <- if (length(all_records) > 0) {
+    df <- do.call(rbind, all_records)
+    rownames(df) <- NULL
+    df
+  } else {
+    data.frame()
+  }
+
+  list(hh_df = hh_df, households = households, diagnostic_df = diagnostic_df)
 }
 
 
 #' Normalize various household inputs into a per-household list
 #'
 #' Accepts (i) an object with \code{$households}, (ii) a list of data frames,
-#'
 #' or (iii) a long data frame with a recognizable household id column, and
 #' returns a list of per-household data frames.
 #'
@@ -667,7 +541,6 @@ simulate_multiple_households_comm <- function(
 #' @return List of per-household data frames.
 #' @keywords internal
 .normalize_households_input <- function(obj) {
-  # NEW: honor a per-HH list stored as an attribute on a long test table
   hh_attr <- attr(obj, "households", exact = TRUE)
   if (!is.null(hh_attr)) {
     if (!length(hh_attr) || !all(vapply(hh_attr, is.data.frame, logical(1)))) {
@@ -676,7 +549,6 @@ simulate_multiple_households_comm <- function(
     return(hh_attr)
   }
 
-  # Case A: simulator-style list with $households
   if (is.list(obj) && !is.data.frame(obj) && !is.null(obj$households)) {
     hh <- obj$households
     if (!length(hh) || !all(vapply(hh, is.data.frame, logical(1)))) {
@@ -685,41 +557,23 @@ simulate_multiple_households_comm <- function(
     return(hh)
   }
 
-  # Case B: already a list of per-HH data.frames
   if (is.list(obj) && length(obj) && all(vapply(obj, is.data.frame, logical(1)))) {
     return(obj)
   }
 
-  # Case C: a single long data.frame/tibble/data.table -> split by a household id column
   if (inherits(obj, c("data.frame", "tbl_df", "tbl", "data.table"))) {
     df <- as.data.frame(obj)
-
-    # Accept multiple common names for household id
-    candidates <- c("hh_id","HH","household","household_id","householdID","hh","hid")
+    candidates <- c("hh_id", "HH", "household", "household_id", "householdID", "hh", "hid")
     key <- candidates[candidates %in% names(df)]
     if (length(key) == 0L) {
-      stop(
-        "RSV/VL+Stan received a data.frame but cannot find a household id column.\n",
-        "Please include one of: hh_id, HH, household, household_id, householdID, hh, hid.",
-        call. = FALSE
-      )
+      stop("Cannot find a household id column. Please include one of: hh_id, HH, household, household_id.", call. = FALSE)
     }
-    key <- key[1]  # first match
-
-    # Create a clean character hh_id, then split
+    key <- key[1]
     df$hh_id <- as.character(df[[key]])
     households <- split(df, df$hh_id, drop = TRUE)
-
-    # Keep names stable
-    nm <- unique(df$hh_id)
-    names(households) <- nm
+    names(households) <- unique(df$hh_id)
     return(households)
   }
 
-  stop(
-    "RSV/VL+Stan path expects (i) list(hh_df=..., households=...), or ",
-    "(ii) a list of per-household data.frames, or ",
-    "(iii) a long data.frame with a household id column.",
-    call. = FALSE
-  )
+  stop("Expected (i) list(hh_df=..., households=...), or (ii) a list of per-household data.frames, or (iii) a long data.frame with a household id column.", call. = FALSE)
 }

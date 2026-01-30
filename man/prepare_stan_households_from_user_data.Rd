@@ -25,25 +25,18 @@ prepare_stan_households_from_user_data(
 \code{infectious_end} (optionally \code{vl_full_trajectory}).
 }}
 
-\item{role_levels}{Character vector of allowed roles after normalization,
-e.g., \code{c("adult","child","elderly","toddler")}.}
+\item{role_levels}{Character vector of allowed roles after normalization.}
 
-\item{vl_mode}{Character; currently used only to trigger trajectory building
-from long data (\code{"from_long"}).}
+\item{vl_mode}{Character; currently used only to trigger trajectory building.}
 
-\item{vl_source}{Character; one of \code{"none"}, \code{"column"}, \code{"simulate"}
-(applies to long-format input).}
+\item{vl_source}{Character; one of \code{"none"}, \code{"column"}, \code{"simulate"}.}
 
 \item{vl_column}{Optional name of the VL column when \code{vl_source = "column"}.}
 
-\item{start_date, end_date}{Optional \code{Date} bounds to convert \code{test_date}
-to day indices (long format).}
+\item{start_date, end_date}{Optional \code{Date} bounds.}
 }
 \value{
-A named list of data frames (one per household) with columns
-\code{hh_id}, \code{person_id}, \code{role}, \code{infection_time},
-\code{infectious_start}, \code{infectious_end}, \code{detection_time},
-\code{infection_resolved}, and \code{vl_full_trajectory} (list-column).
+A named list of data frames (one per household).
 }
 \description{
 Converts user data to a list of per-household data frames required by the

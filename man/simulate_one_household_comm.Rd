@@ -2,72 +2,104 @@
 % Please edit documentation in R/utils-simulatehouseholds.R
 \name{simulate_one_household_comm}
 \alias{simulate_one_household_comm}
-\title{Simulate one household (RSV/VL engine)}
+\title{Simulate a single household with community and within-household transmission}
 \usage{
 simulate_one_household_comm(
   hh_id,
   roles,
   alpha_comm_by_role,
-  beta1 = 0.06,
-  beta2 = 1e-07,
-  delta = 1,
-  rho = 3,
-  V_ref = 1e+07,
-  phi_by_role = c(adult = 1, child = 1.1, elderly = 0.8, toddler = 1.2),
-  kappa_by_role = c(adult = 1, child = 1.1, elderly = 0.7, toddler = 1.2),
-  latent_shape = 2,
-  latent_scale = 1,
-  infectious_shape = 2,
-  infectious_scale = 2,
-  peak_day = 2,
-  width = 2,
-  max_days = 40,
-  test_weekly_before_detection = TRUE,
+  beta1 = 0.3,
+  beta2 = 0.05,
+  delta = 0,
+  phi_by_role = c(adult = 1, child = 7, toddler = 7, elderly = 4),
+  kappa_by_role = c(adult = 1, child = 1.5, toddler = 1.5, elderly = 1),
+  latent_shape = 3,
+  latent_scale = 0.5,
+  infectious_shape = 3,
+  infectious_scale = 1,
+  resolve_shape = 1.5,
+  resolve_scale = 0.5,
+  peak_day = 1,
+  width = 4,
+  max_days = 365,
   perfect_detection = TRUE,
   contact_mat = NULL,
   verbose = FALSE,
-  seasonal_forcing_list = NULL
+  seasonal_forcing_list = NULL,
+  ptrans_threshold = 0.5,
+  detect_threshold_log10 = 1,
+  detect_threshold_Ct = 40,
+  surveillance_interval = 7,
+  test_daily = FALSE,
+  viral_testing = "viral load",
+  V_ref = 3,
+  V_rho = 2.5,
+  Ct_50 = 40,
+  Ct_delta = 2,
+  VL_params_input = default_VL_params,
+  Ct_params_input = default_Ct_params
 )
 }
 \arguments{
-\item{hh_id}{Household identifier.}
+\item{hh_id}{Character or integer; household identifier.}
 
-\item{roles}{Character vector of roles (one per person).}
+\item{roles}{Character vector; roles for each household member.}
 
-\item{alpha_comm_by_role}{Numeric; baseline community hazard (scalar).}
+\item{alpha_comm_by_role}{Numeric; baseline community acquisition rate.}
 
-\item{beta1, beta2, delta, rho, V_ref}{Numeric; transmission constants.}
+\item{beta1, beta2}{Numeric; transmission coefficients.}
 
-\item{phi_by_role, kappa_by_role}{Named numeric vectors; susceptibility and
-infectivity multipliers by role.}
+\item{delta}{Numeric; household size scaling exponent.}
 
-\item{latent_shape, latent_scale, infectious_shape, infectious_scale}{Numeric;
-gamma parameters for latent/infectious durations.}
+\item{phi_by_role}{Named numeric vector; susceptibility multipliers by role.}
 
-\item{peak_day, width}{Numeric; infectivity profile controls.}
+\item{kappa_by_role}{Named numeric vector; infectivity multipliers by role.}
+
+\item{latent_shape, latent_scale}{Numeric; gamma parameters for latent period.}
+
+\item{infectious_shape, infectious_scale}{Numeric; gamma parameters for infectious period.}
+
+\item{resolve_shape, resolve_scale}{Numeric; gamma parameters for resolution period.}
+
+\item{peak_day, width}{Numeric; infectivity profile parameters.}
 
 \item{max_days}{Integer; simulation horizon (days).}
 
-\item{test_weekly_before_detection}{Logical; weekly testing before first detection.}
+\item{perfect_detection}{Logical; assume perfect detection when VL/Ct exceeds threshold.}
 
-\item{perfect_detection}{Logical; perfect detection on test days.}
+\item{contact_mat}{Optional matrix; contact structure within household.}
 
-\item{contact_mat}{Optional square contact matrix (no self-contact).}
+\item{verbose}{Logical; print debug information.}
 
-\item{verbose}{Logical; print progress.}
+\item{seasonal_forcing_list}{Named list; seasonal forcing vectors by role.}
 
-\item{seasonal_forcing_list}{Optional list of length 4 with role-specific
-seasonal multipliers (length \code{max_days}).}
+\item{ptrans_threshold}{Numeric; transmission potential threshold.}
+
+\item{detect_threshold_log10}{Numeric; VL detection threshold (log10).}
+
+\item{detect_threshold_Ct}{Numeric; Ct detection threshold.}
+
+\item{surveillance_interval}{Integer; days between scheduled tests.}
+
+\item{test_daily}{Logical; switch to daily testing after first detection.}
+
+\item{viral_testing}{Character; \code{"viral load"} or \code{"Ct"}.}
+
+\item{V_ref, V_rho}{Numeric; viral load reference and power for transmission.}
+
+\item{Ct_50, Ct_delta}{Numeric; Ct-based infectivity parameters.}
+
+\item{VL_params_input}{Named list; role-specific VL parameters.}
+
+\item{Ct_params_input}{Named list; role-specific Ct parameters.}
 }
 \value{
-A data frame with columns
-\code{hh_id}, \code{person_id}, \code{role}, \code{infection_time},
-\code{infectious_start}, \code{infectious_end}, \code{detection_time},
-\code{infection_resolved}, plus list-columns \code{vl_full_trajectory},
-\code{viral_loads_test_days}. Attributes \code{test_days} and \code{params}
-are attached.
+A data frame with one row per person containing infection timing,
+detection, viral load trajectories, and testing results.
 }
 \description{
-Simulates infection events, infectious periods, detection, and VL trajectories
-for a single household over a fixed horizon.
+Simulates infection dynamics for one household over a specified time horizon,
+incorporating community acquisition, within-household transmission based on
+viral load or Ct values, and testing/detection logic.
 }
+\keyword{internal}

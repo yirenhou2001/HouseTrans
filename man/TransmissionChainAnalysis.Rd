@@ -6,40 +6,17 @@
 \usage{
 TransmissionChainAnalysis(
   user_data,
-  estimation_method = c("mle", "stan"),
-  data_summary = FALSE,
-  postprocessing = TRUE,
   plots = c("daily", "weekly", "timeline", "sar"),
   print_plots = FALSE,
   index_vl_column = "vl_test",
-  n_runs = 10,
-  day_series_covariates = TRUE,
-  series_cols = NULL,
-  comm_covariate_cols = NULL,
-  hh_covariate_cols = NULL,
-  hh_by_role = FALSE,
-  hh_role_covariate_cols = NULL,
-  standardize_covariates = TRUE,
-  lambda_comm = 0.01,
-  lambda_hh = 0.01,
-  start_date = as.Date("2024-09-21"),
-  end_date = as.Date("2025-04-17"),
-  latent_par = list(shape = 2, scale = 1),
-  report_par = list(shape = 1, scale = 1.5),
-  infect_par = list(shape = 3, scale = 2),
-  start_par = c(-6, 0.02, -2, rep(0, 6)),
-  lambda = 0.01,
-  lambda0 = 0.2,
-  lambda_alpha = 5,
-  delta0_true = qlogis(0.002),
-  alpha0_true = qlogis(0.2),
-  true_values = NULL,
+  start_date = as.Date("2024-01-01"),
+  end_date = as.Date("2024-12-31"),
   seasonal_forcing_list = NULL,
   max_days = 365,
-  stan_file = "HH_parameter_estimation2.stan",
-  stan_chains = 1,
-  stan_iter = 100,
-  stan_warmup = 100,
+  stan_file = "model.stan",
+  stan_chains = 4,
+  stan_iter = 2000,
+  stan_warmup = 1000,
   stan_control = list(adapt_delta = 0.99, max_treedepth = 20),
   stan_init = "random",
   stan_refresh = 50,
@@ -54,13 +31,6 @@ TransmissionChainAnalysis(
 \item{user_data}{A data.frame or a list of data.frames describing household testing
 or episode data (see Details for accepted shapes). Lists are row-bound internally.}
 
-\item{estimation_method}{One of \code{c("mle","stan")}. Valid pairs are
-legacy+MLE (\code{"mle"}) and RSV/VL+Stan (\code{"stan"}).}
-
-\item{data_summary}{Logical; print/retain a brief summary in print methods (see Value).}
-
-\item{postprocessing}{Logical; for MLE, compute a post-processing table; for Stan, this is an alias of the posterior summary.}
-
 \item{plots}{Character vector of plot names to build when compatible data are present:
 \code{c("daily","weekly","timeline","sar")} or \code{"all"}.}
 
@@ -68,37 +38,11 @@ legacy+MLE (\code{"mle"}) and RSV/VL+Stan (\code{"stan"}).}
 
 \item{index_vl_column}{Optional character; name of the viral-load column used by SAR-by-VL plotting. Defaults to \code{"vl_test"} when present.}
 
-\item{n_runs}{Integer; number of repeated estimation runs (MLE path only).}
-
-\item{day_series_covariates}{Logical; include day-series covariates (MLE path).}
-
-\item{series_cols}{Optional character vector; selected day-series columns (MLE path).}
-
-\item{comm_covariate_cols, hh_covariate_cols}{Optional character vectors of likelihood-level covariates (MLE path).}
-
-\item{hh_by_role}{Logical; fit separate household effects by role (MLE path).}
-
-\item{hh_role_covariate_cols}{Optional named list of role-specific covariates (MLE path).}
-
-\item{standardize_covariates}{Logical; standardize covariates (MLE path).}
-
-\item{lambda_comm, lambda_hh}{Numeric; ridge penalties for community and household covariates (MLE path).}
-
 \item{start_date, end_date}{\code{Date} study window.}
 
-\item{latent_par, report_par, infect_par}{Lists of gamma parameters (shape, scale) used by imputation (MLE path).}
+\item{seasonal_forcing_list}{Optional named list of role vectors for forcing.}
 
-\item{start_par}{Numeric vector; optimizer starting values (MLE path).}
-
-\item{lambda, lambda0, lambda_alpha}{Numeric; optimizer penalties (MLE path).}
-
-\item{delta0_true, alpha0_true}{Numeric anchors on the logit scale (MLE path).}
-
-\item{true_values}{Optional named numeric vector of reference/true values for post-processing (MLE path).}
-
-\item{seasonal_forcing_list}{Optional named list of role vectors for forcing (Stan path).}
-
-\item{max_days}{Integer; maximum modeled days (Stan path).}
+\item{max_days}{Integer; maximum modeled days.}
 
 \item{stan_file}{Path to a Stan model file.}
 
@@ -112,28 +56,25 @@ legacy+MLE (\code{"mle"}) and RSV/VL+Stan (\code{"stan"}).}
 
 \item{stan_cores}{Integer; CPU cores for Stan.}
 
-\item{vl_mode}{One of \code{c("auto","from_long")} indicating how to derive VL for Stan path.}
+\item{vl_mode}{One of \code{c("auto","from_long")} indicating how to derive VL.}
 
-\item{vl_source}{One of \code{c("column","simulate","none")} indicating the VL source for Stan path.}
+\item{vl_source}{One of \code{c("column","simulate","none")} indicating the VL source.}
 
-\item{vl_column}{Optional character; the VL column when \code{vl_source="column"} (Stan path).}
+\item{vl_column}{Optional character; the VL column when \code{vl_source="column"}.}
 
-\item{role_levels}{Character vector; canonical role levels for normalization on the Stan path.}
+\item{role_levels}{Character vector; canonical role levels for normalization.}
 }
 \value{
 An object of class \code{"TransmissionChainResult"} containing:
 \itemize{
-\item \code{$results}: engine-specific internals (MLE: summaries/person-day/estimates;
-Stan: stan_data, fit, posterior_summary).
-\item \code{$postprocessing}: MLE summary table or Stan posterior summary.
+\item \code{$results}: Contains \code{fit} (the Stan object) and \code{posterior_summary}.
+\item \code{$postprocessing}: Stan posterior summary.
 \item \code{$plot_list}: named list of ggplot objects when built.
-\item \code{$data_summary}: flag indicating whether print methods preview summaries.
 }
 }
 \description{
-Runs the end-to-end workflow on \emph{user-provided} data using either the
-legacy MLE path (\code{estimation_method = "mle"}) or the RSV/VL Stan path
-(\code{estimation_method = "stan"}). This function does not simulate data;
+Runs the end-to-end workflow on \emph{user-provided} data using
+Bayesian Stan estimation. This function does not simulate data;
 it expects input in tabular form (see Details).
 }
 \details{
@@ -145,14 +86,31 @@ it expects input in tabular form (see Details).
 \code{infection_time}, \code{infectious_start}, \code{infectious_end},
 and optionally a viral-load trajectory.
 }
-Only two engine/method pairs are supported: legacy+MLE and RSV/VL+Stan.
 }
 \examples{
 \dontrun{
-# MLE path requires full legacy preprocessing; shown here schematically:
-# res <- TransmissionChainAnalysis(user_data = your_long_df, estimation_method = "mle")
+T_max <- 12
+df_person <- data.frame(
+  hh_id = c("HH1","HH1","HH1","HH2","HH2","HH2"),
+  person_id = c(1,2,3,1,2,3),
+  role = c("adult","child","elderly","adult","child","elderly"),
+  infection_time = c(2, 4, NA, 1, 3, NA),
+  infectious_start = c(3, 6, NA, 2, 5, NA),
+  infectious_end = c(8, 9, NA, 7, 9, NA),
+  infection_resolved = c(9, 10, NA, 8, 10, NA)
+)
+seasonal_forcing_list <- list(
+  adult = rep(1, T_max), child = rep(1, T_max),
+  elderly = rep(1, T_max), toddler = rep(1, T_max)
+)
+result <- TransmissionChainAnalysis(
+  user_data = df_person,
+  seasonal_forcing_list = seasonal_forcing_list,
+  max_days = T_max,
+  stan_chains = 1, stan_iter = 300, stan_warmup = 150
+)
 }
 }
 \seealso{
-\code{\link{main_parameter_estimation_pipeline}}, \code{\link{postprocessing_estimates}}
+\code{\link{main_parameter_estimation_pipeline}}, \code{\link{GenSyn}}
 }

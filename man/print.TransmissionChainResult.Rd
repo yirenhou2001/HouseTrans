@@ -16,9 +16,7 @@
 }
 \description{
 Nicely prints sections available in a \code{TransmissionChainResult} returned by
-\code{\link{TransmissionChainAnalysis}}. For MLE, shows the post-processing
-table (if present) and, optionally, a preview of the individual-level summary.
-For Stan, shows the Stan posterior summary (or a preview) when available.
+\code{\link{TransmissionChainAnalysis}}.
 }
 \seealso{
 \code{\link{TransmissionChainAnalysis}}

@@ -5,68 +5,45 @@
 \title{GenSyn: household simulation & estimation wrapper}
 \usage{
 GenSyn(
-  n_households = 10,
-  n_runs = 10,
-  data_summary = FALSE,
+  n_households = 50,
   print_plots = TRUE,
   plots = c("daily", "weekly", "timeline", "sar"),
-  engine = c("legacy", "rsv_vl"),
-  estimation_method = c("mle", "stan"),
   index_vl_column = "vl_test",
-  user_data = NULL,
-  synthetic_data = TRUE,
-  hh.size = sample(3:7, 1),
-  tests.per.week = 1,
-  Covariates = FALSE,
-  Covariates_list = c("Vaccination status", "Antibody Level"),
-  Covariate_specifications = NULL,
-  day_series_covariates = TRUE,
-  series_cols = NULL,
-  comm_covariate_cols = NULL,
-  hh_covariate_cols = NULL,
-  hh_by_role = FALSE,
-  hh_role_covariate_cols = NULL,
-  standardize_covariates = TRUE,
-  lambda_comm = 0.01,
-  lambda_hh = 0.01,
-  p.comm.base.infant.fix = 0.002,
-  p.comm.multiplier.sibling = 1,
-  p.comm.multiplier.parent = 1,
-  p.comm.multiplier.elder = 1,
-  p.hh.base.infant = 0.2,
-  p.hh.multiplier.sibling = 0.5267686,
-  p.hh.multiplier.parent = 0.8008933,
-  p.hh.multiplier.elder = 0.6008933,
-  p.imm.base.sibling = 1e-10,
-  p.imm.base.parent = 1e-10,
-  p.imm.base.elder = 1e-10,
-  partial.immunity.infant = 1e-10,
-  partial.immunity.sibling = 1e-10,
-  partial.immunity.parent = 1e-10,
-  partial.immunity.elder = 1e-10,
-  duration.latent = 1,
-  duration.infect.inf = 2,
-  multiplier.dur.sibpar = 0.5,
-  p.detect = 0.999,
-  amplitude = 2.6581 * 0,
-  phase = -0.408,
-  start_date = as.Date("2024-09-21"),
-  end_date = as.Date("2025-04-17"),
-  latent_par = list(shape = 2, scale = 1),
-  report_par = list(shape = 1, scale = 1.5),
-  infect_par = list(shape = 3, scale = 2),
-  start_par = c(-6, 0.02, -2, rep(0, 6)),
-  lambda = 0.01,
-  lambda0 = 0.2,
-  lambda_alpha = 5,
-  delta0_true = qlogis(0.002),
-  alpha0_true = qlogis(0.2),
+  start_date = as.Date("2024-01-01"),
+  end_date = as.Date("2024-12-31"),
   seasonal_forcing_list = NULL,
   max_days = 365,
-  stan_file = "HH_parameter_estimation2.stan",
-  stan_chains = 1,
-  stan_iter = 100,
-  stan_warmup = 100,
+  alpha_comm_by_role = 0.005,
+  beta1 = 0.3,
+  beta2 = 0.05,
+  delta = 0,
+  phi_by_role = c(adult = 1, child = 7, toddler = 7, elderly = 4),
+  kappa_by_role = c(adult = 1, child = 1.5, toddler = 1.5, elderly = 1),
+  latent_shape = 3,
+  latent_scale = 0.5,
+  infectious_shape = 3,
+  infectious_scale = 1,
+  resolve_shape = 1.5,
+  resolve_scale = 0.5,
+  peak_day = 1,
+  width = 4,
+  ptrans_threshold = 0.5,
+  detect_threshold_log10 = 1,
+  detect_threshold_Ct = 40,
+  surveillance_interval = 7,
+  test_daily = FALSE,
+  viral_testing = "viral load",
+  V_ref = 3,
+  V_rho = 2.5,
+  Ct_50 = 40,
+  Ct_delta = 2,
+  VL_params_list = default_VL_params,
+  Ct_params_list = default_Ct_params,
+  household_profile_list = default_household_profile,
+  stan_file = "model.stan",
+  stan_chains = 4,
+  stan_iter = 2000,
+  stan_warmup = 1000,
   stan_control = list(adapt_delta = 0.99, max_treedepth = 20),
   stan_init = "random",
   stan_refresh = 50,
@@ -74,75 +51,59 @@ GenSyn(
 )
 }
 \arguments{
-\item{n_households}{Integer; number of households to simulate when \code{synthetic_data=TRUE}.}
-
-\item{n_runs}{Integer; number of repeated MLE runs (legacy path only).}
-
-\item{data_summary}{Logical (legacy+MLE only); if \code{TRUE}, per-individual summary is retained/printed.}
+\item{n_households}{Integer; number of households to simulate.}
 
 \item{print_plots}{Logical; print plots if produced.}
 
 \item{plots}{Character vector of plot names (\code{"daily"}, \code{"weekly"}, \code{"sar"}, \code{"timeline"}) or \code{"all"}.}
 
-\item{engine}{Character; one of \code{c("legacy","rsv_vl")}.}
-
-\item{estimation_method}{Character; one of \code{c("mle","stan")}.}
-
-\item{index_vl_column}{Character; viral-load column name for plotting on Stan path (default \code{"vl_test"}).}
-
-\item{user_data}{Optional user data (see \code{\link{main_parameter_estimation_pipeline}}); ignored if \code{synthetic_data=TRUE}.}
-
-\item{synthetic_data}{Logical; simulate data internally.}
-
-\item{hh.size}{Integer; household size used in simulation.}
-
-\item{tests.per.week}{Integer; tests per person per week (legacy engine).}
-
-\item{Covariates}{Logical; include synthetic covariates (legacy).}
-
-\item{Covariates_list}{Character vector; names of covariates (legacy).}
-
-\item{Covariate_specifications}{Optional list describing covariate generation (legacy).}
-
-\item{day_series_covariates}{Logical; include day-series covariates (legacy+MLE).}
-
-\item{series_cols}{Optional character vector; selected day-series columns (legacy+MLE).}
-
-\item{comm_covariate_cols, hh_covariate_cols}{Optional character vectors; likelihood-level covariates (legacy+MLE).}
-
-\item{hh_by_role}{Logical; fit separate HH effects by role (legacy+MLE).}
-
-\item{hh_role_covariate_cols}{Optional named list of role-specific covariates (legacy+MLE).}
-
-\item{standardize_covariates}{Logical; standardize covariates (legacy+MLE).}
-
-\item{lambda_comm, lambda_hh}{Numeric; ridge penalties for community/household covariates (legacy+MLE).}
-
-\item{p.comm.base.infant.fix, p.comm.multiplier.sibling, p.comm.multiplier.parent, p.comm.multiplier.elder}{Numeric; community risk knobs (legacy simulator).}
-
-\item{p.hh.base.infant, p.hh.multiplier.sibling, p.hh.multiplier.parent, p.hh.multiplier.elder}{Numeric; within-HH knobs (legacy simulator).}
-
-\item{p.imm.base.sibling, p.imm.base.parent, p.imm.base.elder, partial.immunity.infant, partial.immunity.sibling, partial.immunity.parent, partial.immunity.elder}{Numeric; immunity knobs (legacy simulator).}
-
-\item{duration.latent, duration.infect.inf, multiplier.dur.sibpar}{Numeric; timing knobs (legacy simulator).}
-
-\item{p.detect}{Numeric; detection probability (legacy simulator).}
-
-\item{amplitude, phase}{Numeric; seasonality controls (legacy simulator).}
+\item{index_vl_column}{Character; viral-load column name for plotting (default \code{"vl_test"}).}
 
 \item{start_date, end_date}{\code{Date}; study window.}
 
-\item{latent_par, report_par, infect_par}{Lists of gamma parameters (shape, scale) for imputation (legacy+MLE).}
+\item{seasonal_forcing_list}{Optional named list of role vectors; seasonal forcing.}
 
-\item{start_par}{Numeric vector; optimizer starting values (legacy+MLE).}
+\item{max_days}{Integer; maximum simulated days.}
 
-\item{lambda, lambda0, lambda_alpha}{Numeric; optimizer penalties (legacy+MLE).}
+\item{alpha_comm_by_role}{Numeric; baseline community acquisition rate.}
 
-\item{delta0_true, alpha0_true}{Numeric; reference values on logit scale (legacy+MLE).}
+\item{beta1, beta2}{Numeric; transmission coefficients.}
 
-\item{seasonal_forcing_list}{Optional named list of role vectors; seasonal forcing (RSV/VL+Stan).}
+\item{delta}{Numeric; household size scaling exponent.}
 
-\item{max_days}{Integer; maximum simulated days (RSV/VL+Stan).}
+\item{phi_by_role}{Named numeric vector; susceptibility multipliers by role.}
+
+\item{kappa_by_role}{Named numeric vector; infectivity multipliers by role.}
+
+\item{latent_shape, latent_scale}{Numeric; gamma parameters for latent period.}
+
+\item{infectious_shape, infectious_scale}{Numeric; gamma parameters for infectious period.}
+
+\item{resolve_shape, resolve_scale}{Numeric; gamma parameters for resolution period.}
+
+\item{peak_day, width}{Numeric; infectivity profile parameters.}
+
+\item{ptrans_threshold}{Numeric; transmission potential threshold.}
+
+\item{detect_threshold_log10}{Numeric; VL detection threshold in log10.}
+
+\item{detect_threshold_Ct}{Numeric; Ct detection threshold.}
+
+\item{surveillance_interval}{Integer; days between scheduled tests.}
+
+\item{test_daily}{Logical; switch to daily testing after first detection.}
+
+\item{viral_testing}{Character; \code{"viral load"} or \code{"Ct"}.}
+
+\item{V_ref, V_rho}{Numeric; viral load reference and power.}
+
+\item{Ct_50, Ct_delta}{Numeric; Ct-based infectivity parameters.}
+
+\item{VL_params_list}{Named list; role-specific VL trajectory parameters.}
+
+\item{Ct_params_list}{Named list; role-specific Ct trajectory parameters.}
+
+\item{household_profile_list}{Named list; household composition probabilities.}
 
 \item{stan_file}{Path to a Stan model file.}
 
@@ -157,42 +118,26 @@ GenSyn(
 \item{stan_cores}{Integer; CPU cores for Stan.}
 }
 \value{
-A \code{"GenSynResult"} list with elements: \code{$call}, \code{$engine},
-\code{$estimation_method}, \code{$n_households}, \code{$n_runs}, \code{$results},
-\code{$postprocessing}, \code{$plot_list}.
+A \code{"GenSynResult"} list with elements: \code{$call},
+\code{$n_households}, \code{$results}, \code{$postprocessing}, \code{$plot_list}.
 }
 \description{
-Runs \code{\link{main_parameter_estimation_pipeline}()} to either simulate
-(or ingest) household data, fit via the legacy MLE path or the RSV/VL+Stan
-path, and assemble a \code{"GenSynResult"}.
-}
-\details{
-Arguments are forwarded to \code{\link{main_parameter_estimation_pipeline}()}; some are ignored depending on \code{engine}/\code{estimation_method}.
+Runs \code{\link{main_parameter_estimation_pipeline}()} to simulate
+household data, fit via Bayesian Stan, and assemble a \code{"GenSynResult"}.
 }
 \examples{
-\donttest{
-# Lightweight MLE example (no Stan):
-set.seed(1)
-fit <- GenSyn(
-  n_households = 3,
-  engine = "legacy", estimation_method = "mle",
-  n_runs = 2, print_plots = FALSE
-)
-class(fit)
-}
 \dontrun{
-# Heavier Stan example (do not run on CRAN):
+# Simulate and estimate
 seasonal_forcing_list <- list(
-  adult=rep(1,60), child=rep(1,60), elderly=rep(1,60), toddler=rep(1,60)
+  adult=rep(0.1,365), child=rep(0.1,365), elderly=rep(0.1,365), toddler=rep(0.1,365)
 )
-fit2 <- GenSyn(
-  n_households=2,
-  engine="rsv_vl", estimation_method="stan",
-  seasonal_forcing_list=seasonal_forcing_list, max_days=60,
-  stan_chains=1, stan_iter=200, stan_warmup=100, stan_cores=1
+fit <- GenSyn(
+  n_households=50,
+  seasonal_forcing_list=seasonal_forcing_list, max_days=365,
+  stan_chains=4, stan_iter=2000, stan_warmup=1000, stan_cores=4
 )
 }
 }
 \seealso{
-\code{\link{main_parameter_estimation_pipeline}}, \code{\link{postprocessing_estimates}}
+\code{\link{main_parameter_estimation_pipeline}}, \code{\link{TransmissionChainAnalysis}}
 }

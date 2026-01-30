@@ -5,90 +5,74 @@ Household.Transmission.Chain.Data.Analysis
 [![R-CMD-check](https://github.com/yirenhou2001/Household.Transmission.Chain.Data.Analysis/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/yirenhou2001/Household.Transmission.Chain.Data.Analysis/actions/workflows/R-CMD-check.yaml)
 <!-- badges: end -->
 
-This package provides a streamlined pipeline to simulate household infection dynamics, estimate transmission parameters, and visualize epidemic timelines. It supports two distinct modeling engines:
-
-
-A. **RSV / Viral-Load Engine (Stan)**: A Bayesian approach using `rstan` that models transmission probability as a function of viral load, seasonality, and role-specific susceptibility/infectivity.
-
-B. **Legacy / Maximum Likelihood Estimation (MLE) Engine**: A likelihood-based approach for binary infection status data using `optim` with support for extensive community and household covariates.
-
+This package provides a streamlined pipeline to simulate household infection dynamics, estimate transmission parameters, and visualize epidemic timelines. It uses a Bayesian approach with `rstan` that models transmission probability as a function of viral load, seasonality, and role-specific susceptibility/infectivity.
 
 ## Core Workflow
 
-1. `GenSyn()`: **Simulation and validation**
-Use this to generate synthetic data and run the full estimation pipeline end-to-end. It allows you to validate the model by comparing estimates against known "ground truth" parameters.
+1. **`GenSyn()`**: Simulation and validation
+   - Simulates household structures with viral load trajectories
+   - Estimates parameters using Bayesian Stan
+   - Validates results by comparing estimates against known ground truth
 
-* **Simulates** household structures, viral load trajectories (Stan path), or binary infection statuses (MLE path).
+2. **`TransmissionChainAnalysis()`**: User data analysis
+   - Estimates transmission parameters from your own observational data
+   - Accepts either long-format testing data or per-person episode tables
 
-* **Estimates** parameters using the generated data.
+## Installation
 
-* **Validates** results by reporting bias and relative bias in the post-processing step.
-
-2. `TransmissionChainAnalysis()`: **User data analysis**
-Use this to estimate transmission parameters from your own observational data with similar functionalities with `GenSyn()`.
-
-## Quick start
-
-## Method A: RSV/VL Engine (Bayesian approach)
-
-Typically runs faster than Method B. 
-
-Best for analyzing transmission driven by viral load trajectories and seasonality.
-
-```{r}
-library(Household.Transmission.Chain.Data.Analysis)
-# 1) Simulate and estimate via Stan
-seasonal_forcing_list <- readRDS("../inst/extdata/seasonal_forcing_list.rds")
-result_example1 <- GenSyn(
-  n_households = 5,
-  print_plots    = FALSE,
-
-  engine = "rsv_vl",
-  estimation_method = "stan",
-  stan_file    = "HH_parameter_estimation2.stan",
-  seasonal_forcing_list = seasonal_forcing_list,
-
-  stan_chains = 1,
-  stan_iter   = 800,
-  stan_warmup = 400,
-  stan_control = list(adapt_delta = 0.98, max_treedepth = 12),
-  stan_refresh = 25,
-  stan_cores   = 1
-)
+```r
+# Install from GitHub
+devtools::install_github("yirenhou2001/Household.Transmission.Chain.Data.Analysis")
 ```
 
+## Quick Start
 
-```{r}
-# 2) Estimate from your own formatted data
-T_max <- 12
-df_person <- rbind(
-  data.frame(
-    hh_id             = "HH1",
-    person_id         = 1:3,
-    role              = c("adult","child","elderly"),
-    infection_time    = c( 2,  4, NA),
-    infectious_start  = c( 3,  6, NA),
-    infectious_end    = c( 8,  9, NA),
-    infection_resolved= c( 9, 10, NA),
-    stringsAsFactors  = FALSE
-  ),
-  data.frame(
-    hh_id             = "HH2",
-    person_id         = 1:3,
-    role              = c("adult","child","elderly"),
-    infection_time    = c( 1,  3, NA),
-    infectious_start  = c( 2,  5, NA),
-    infectious_end    = c( 7,  9, NA),
-    infection_resolved= c( 8, 10, NA),
-    stringsAsFactors  = FALSE
-  )
+### 1) Simulate and estimate
+
+```r
+library(Household.Transmission.Chain.Data.Analysis)
+
+# Define seasonal forcing (length must match max_days)
+seasonal_forcing_list <- list(
+  adult   = rep(0.1, 365),
+  child   = rep(0.1, 365),
+  elderly = rep(0.1, 365),
+  toddler = rep(0.1, 365)
 )
 
-# Optional list-cols (safe to omit)
-df_person$vl_full_trajectory    <- vector("list", nrow(df_person))
-df_person$viral_loads_test_days <- vector("list", nrow(df_person))
+result <- GenSyn(
+  n_households = 50,
+  print_plots  = FALSE,
+  seasonal_forcing_list = seasonal_forcing_list,
+  max_days     = 365,
+  
+  # Stan sampling controls
+  stan_chains  = 4,
+  stan_iter    = 2000,
+  stan_warmup  = 1000,
+  stan_control = list(adapt_delta = 0.99, max_treedepth = 20),
+  stan_cores   = 4
+)
 
-# Flat seasonal forcing for all roles (length must match max_days)
+# View posterior summary
+print(result$postprocessing)
+```
+
+### 2) Analyze your own data
+
+```r
+# Per-person episode format
+T_max <- 30
+df_person <- data.frame(
+  hh_id             = c("HH1","HH1","HH1","HH2","HH2","HH2"),
+  person_id         = c(1, 2, 3, 1, 2, 3),
+  role              = c("adult","child","elderly","adult","child","elderly"),
+  infection_time    = c(2, 4, NA, 1, 3, NA),
+  infectious_start  = c(3, 6, NA, 2, 5, NA),
+  infectious_end    = c(8, 9, NA, 7, 9, NA),
+  infection_resolved= c(9, 10, NA, 8, 10, NA)
+)
+
 seasonal_forcing_list <- list(
   adult   = rep(1, T_max),
   child   = rep(1, T_max),
@@ -96,80 +80,104 @@ seasonal_forcing_list <- list(
   toddler = rep(1, T_max)
 )
 
-result_example2 <- TransmissionChainAnalysis(
-  user_data         = df_person,    # <-- per-person episodes format
-  estimation_method = "stan",
-  print_plots    = FALSE,
-
-  # RSV/VL + Stan knobs
+result <- TransmissionChainAnalysis(
+  user_data             = df_person,
   seasonal_forcing_list = seasonal_forcing_list,
-  stan_file    = "HH_parameter_estimation2.stan",
   max_days              = T_max,
-
-  # keep Stan light so it finishes quickly
+  
+  # Light Stan settings for quick testing
   stan_chains  = 1,
-  stan_iter    = 300,
-  stan_warmup  = 150,
+  stan_iter    = 500,
+  stan_warmup  = 250,
   stan_control = list(adapt_delta = 0.98, max_treedepth = 12),
-  stan_init    = "random",
-  stan_refresh = 50,
   stan_cores   = 1
 )
 ```
 
+## Input Data Formats
 
-## Method B: Legacy Engine (Maximum Likelihood)
+### Per-person episode table (recommended)
 
-Best for standard binary infection data (positive/negative).
+| Column             | Description                                    |
+|--------------------|------------------------------------------------|
+| `hh_id`            | Household identifier                           |
+| `person_id`        | Individual ID within household                 |
+| `role`             | Family role: "adult", "child", "toddler", "elderly" |
+| `infection_time`   | Day of infection onset (NA if not infected)    |
+| `infectious_start` | Day infectiousness begins                      |
+| `infectious_end`   | Day infectiousness ends                        |
+| `infection_resolved` | Day infection resolves                       |
 
-```{r}
-# 3) Simulate and estimate via MLE
-result_example3 <- GenSyn(
-  n_households = 10,
-  n_runs       = 10,
-  data_summary = TRUE,
+### Long-format testing table
 
-  engine = "legacy",
-  estimation_method = "mle"
-)
-```
-
-## Inputs
-
-For `TransmissionChainAnalysis()`, `user_data` should be a long-format data frame containing at least:
-
-| Column           | Description                                   |
-|------------------|-----------------------------------------------|
-| `HH`/`hh_id`     | Unique household identifier                   |
-| `individual_ID`  | Individual ID within the household            |
-| `role`           | Family role (e.g., "infant","child","adult","elder") |
-| `test_date`      | Integer day of the test (or Date object)      |
-| `infection_status` | Binary (0/1) or logical indicating infection |
-| `community_risk` | Numeric daily community risk intensity        |
+| Column             | Description                                    |
+|--------------------|------------------------------------------------|
+| `HH`               | Household identifier                           |
+| `individual_ID`    | Individual ID within household                 |
+| `role`             | Family role                                    |
+| `test_date`        | Integer day or Date object                     |
+| `infection_status` | Binary (0/1) indicating positive test          |
 
 ## Outputs
 
 Both main functions return a result object containing:
 
-* `$results`: The raw output from the pipeline.
+- **`$results`**: Raw pipeline output including:
+  - `fit`: The `stanfit` object
+  - `stan_data`: Data passed to Stan
+  - `posterior_summary`: Tidy summary of posteriors
 
-    + MLE: Contains `estimates` (matrix of runs) and `summarized_data` (imputed timelines).
+- **`$postprocessing`**: Clean summary table with posterior mean, SD, and 95% credible intervals for:
+  - Role-specific susceptibility (`phi`)
+  - Role-specific infectivity (`kappa`)
+  - Latent period mean (`latent_mean`)
 
-    + Stan: Contains `fit` (the Stan object) and `posterior_summary`.
-
-* `$postprocessing`: A clean summary table.
-
-    + MLE: Bias, relative bias, mean estimate, and standard error across runs.
-
-    + Stan: Posterior mean, standard deviation, and 95% credible intervals for role-specific susceptibility (`phi`) and infectivity (`kappa`).
-
-* `$plot_list`: A list of `ggplot2` objects (if requested).
+- **`$plot_list`**: Named list of `ggplot2` objects (when requested)
 
 ## Visualization
-The package includes built-in plotting capabilities to inspect transmission dynamics. These are accessible via the `plots` argument in `TransmissionChainAnalysis` or `GenSyn`.
 
-* **Daily/Weekly Infections:** Aggregate counts of new infections by role.
+Built-in plotting capabilities are available via the `plots` argument:
 
-* **Timelines:** Per-household charts showing infection and detection times.
+- **`"daily"`**: Daily infections by role
+- **`"weekly"`**: Weekly infections by role  
+- **`"timeline"`**: Per-household infection and detection timelines
+- **`"sar"`**: Secondary attack rate by index case viral load
 
-* **SAR by Viral Load:** Analysis of secondary attack rate based on the index case's viral load.
+```r
+# Generate all plots
+result <- GenSyn(
+  n_households = 50,
+  plots = c("daily", "weekly", "timeline", "sar"),
+  print_plots = TRUE
+)
+
+# Access individual plots
+result$plot_list$daily
+result$plot_list$timeline
+```
+
+## Model Details
+
+The Stan model estimates:
+
+- **`phi[role]`**: Role-specific susceptibility multipliers
+- **`kappa[role]`**: Role-specific infectivity multipliers  
+- **`latent_mean`**: Mean latent period (soft-gate transition to infectiousness)
+
+Transmission probability incorporates:
+- Viral load dynamics using a double-exponential trajectory model
+- Seasonal forcing patterns
+- Household size scaling
+- Contact structure within households
+
+## Citation
+
+If you use this package in your research, please cite:
+
+```
+@software{HouseholdTransmission,
+  author = {Hou, Yiren},
+  title = {Household.Transmission.Chain.Data.Analysis},
+  url = {https://github.com/yirenhou2001/Household.Transmission.Chain.Data.Analysis}
+}
+```

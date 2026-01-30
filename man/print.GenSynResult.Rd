@@ -7,7 +7,7 @@
 \method{print}{GenSynResult}(x, ...)
 }
 \arguments{
-\item{x}{A \code{GenSynResult} object (from \code{\link{GenSyn}}).}
+\item{x}{A \code{GenSynResult} object.}
 
 \item{...}{Unused.}
 }
@@ -15,10 +15,5 @@
 \code{x}, invisibly.
 }
 \description{
-Formats a \code{GenSynResult} for display. Prints engine/method,
-basic run info, any stored post-processing table, and (legacy+MLE only)
-a short individual-level preview when \code{x$data_summary} is \code{TRUE}.
-}
-\seealso{
-\code{\link{GenSyn}}
+Print method for \code{GenSynResult}
 }

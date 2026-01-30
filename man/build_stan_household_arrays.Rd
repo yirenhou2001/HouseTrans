@@ -2,12 +2,12 @@
 % Please edit documentation in R/utils-bayesian.R
 \name{build_stan_household_arrays}
 \alias{build_stan_household_arrays}
-\title{Assemble Stan data arrays for the household model}
+\title{Build Stan data arrays from household list}
 \usage{
 build_stan_household_arrays(
   households,
-  T_max = 365,
-  seasonal_forcing_list,
+  T_max = 365L,
+  seasonal_forcing_list = NULL,
   alpha_comm_by_role = 0.005,
   beta1 = 0.2,
   beta2 = 0.6,
@@ -15,35 +15,25 @@ build_stan_household_arrays(
   reference_phi = 1,
   reference_kappa = 1,
   g_peak_day = 2,
-  g_width = 2
+  g_width = 4
 )
 }
 \arguments{
-\item{households}{Either a list of per-household data frames (each with
-\code{vl_full_trajectory}) or a single person-level data frame with
-\code{hh_id}, \code{role}, \code{infection_time}, \code{infectious_start},
-\code{infectious_end}, \code{infection_resolved}, \code{vl_full_trajectory}.}
+\item{households}{List of per-household data frames.}
 
-\item{T_max}{Integer; time horizon (days).}
+\item{T_max}{Integer; maximum time horizon.}
 
-\item{seasonal_forcing_list}{Named list of role-specific forcing series.}
+\item{seasonal_forcing_list}{Named list of seasonal forcing vectors.}
 
-\item{alpha_comm_by_role, beta1, beta2, V_ref, reference_phi, reference_kappa}{Scalars controlling hazards and reference levels.}
+\item{alpha_comm_by_role, beta1, beta2, V_ref}{Numeric; model parameters.}
 
-\item{g_peak_day, g_width}{Scalars controlling the infectivity profile.}
+\item{reference_phi, reference_kappa}{Numeric; reference parameters.}
+
+\item{g_peak_day, g_width}{Numeric; infectivity profile parameters.}
 }
 \value{
-A named list suitable for \code{data=} in Stan containing
-\code{N, T, H, R, delta, hh_id, role_id, Y, I, V, V_term, alpha_comm_by_role,
-  max_infectious, hh_size, hh_max_size, hh_members, g_profile, V_ref, beta1,
-  beta2, reference_phi, reference_kappa, seasonal_forcing_mat}.
+Named list for Stan.
 }
 \description{
-Produces the \code{data} list for Stan from simulator households or a
-person-level frame, including infectious indicators, infection days, VL
-arrays, household membership, and seasonal forcing.
-}
-\details{
-If VL is absent or sentinel-only, \code{V_term} is zero and the VL-mediated
-component is effectively disabled.
+Converts a list of per-household data frames into Stan-ready arrays.
 }

@@ -2,23 +2,11 @@
 % Please edit documentation in R/utils-bayesian.R
 \name{.resolve_stan_model}
 \alias{.resolve_stan_model}
-\title{Resolve Stan model source (file or code)}
+\title{Resolve Stan model file path}
 \usage{
-.resolve_stan_model(stan_file = NULL, stan_code = NULL, package_name = NULL)
-}
-\arguments{
-\item{stan_file}{Character or \code{NULL}. Path, \code{builtin:<key>}, or packaged file name.}
-
-\item{stan_code}{Character or \code{NULL}. Stan program text.}
-
-\item{package_name}{Character or \code{NULL}. Package name for \code{system.file()} lookup.}
-}
-\value{
-List with elements \code{file} (normalized path or \code{NULL})
-and \code{code} (Stan text or \code{NULL}).
+.resolve_stan_model(stan_file, stan_code = NULL, package_name = NULL)
 }
 \description{
-Chooses between direct Stan code, a file path, a packaged file via
-\code{system.file()}, a \code{builtin:<key>} reference, or a tiny fallback.
+Resolve Stan model file path
 }
 \keyword{internal}

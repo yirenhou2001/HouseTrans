@@ -6,7 +6,7 @@
 \usage{
 run_household_stan(
   stan_data,
-  stan_file = "HH_parameter_estimation2.stan",
+  stan_file = "model.stan",
   chains = 4,
   iter = 2000,
   warmup = 1000,
@@ -19,26 +19,23 @@ run_household_stan(
 )
 }
 \arguments{
-\item{stan_data}{Named list as returned by
-\code{\link{build_stan_household_arrays}}.}
+\item{stan_data}{Named list from \code{build_stan_household_arrays} or \code{prepare_stan_data}.}
 
-\item{stan_file}{Path to a Stan model file (or \code{"builtin:<key>"}).}
+\item{stan_file}{Path to Stan model file.}
 
 \item{chains, iter, warmup}{Stan MCMC settings.}
 
-\item{control}{List passed to \code{rstan::stan()} (e.g., \code{adapt_delta},
-\code{max_treedepth}).}
+\item{control}{List passed to \code{rstan::sampling()}.}
 
-\item{init, refresh, cores}{Passed through to \code{rstan::sampling()}.}
+\item{init, refresh, cores}{Stan parameters.}
 
 \item{stan_code}{Optional character string with Stan program code.}
 
-\item{package_name}{Optional package name for \code{system.file("stan", ...)} lookup.}
+\item{package_name}{Optional package name for \code{system.file} lookup.}
 }
 \value{
 A \code{stanfit} object.
 }
 \description{
-Thin wrapper around \code{rstan::stan()} (or compiled model via
-\code{rstan::stan_model()}) with reasonable defaults.
+Wrapper around \code{rstan::sampling()} with reasonable defaults.
 }

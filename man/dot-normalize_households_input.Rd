@@ -14,8 +14,6 @@ List of per-household data frames.
 }
 \description{
 Accepts (i) an object with \code{$households}, (ii) a list of data frames,
-}
-\details{
 or (iii) a long data frame with a recognizable household id column, and
 returns a list of per-household data frames.
 }

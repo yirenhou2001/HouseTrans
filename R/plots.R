@@ -1,54 +1,3 @@
-#' Prepare inputs for transmission plots
-#'
-#' Validates and standardizes \code{results$summarized_data} and (optionally)
-#' locates a viral-load column in \code{results$person_day}. Adds a normalized
-#' role factor (\code{role_std}) and returns the pieces plotters need.
-#'
-#' @param results List from the pipeline; must contain \code{summarized_data}
-#'   and may contain \code{person_day}.
-#' @param index_vl_column Optional character. Viral-load column name to use
-#'   from \code{person_day}. If \code{NULL}, falls back to \code{"vl_test"} when present.
-#'
-#' @return List with elements: \code{sd} (standardized summary data),
-#'   \code{pd} (\code{person_day} or \code{NULL}), \code{vl_col} (chosen VL column
-#'   or \code{NULL}), and \code{ok} (\code{TRUE}/\code{FALSE}).
-#'
-#' @details Expects columns in \code{sd}: \code{HH}, \code{individual_ID},
-#'   \code{role}, \code{inf_date}, \code{inf_start_date}, \code{inf_end_date}.
-#'   Creates \code{role_std} with levels \code{child}, \code{toddler},
-#'   \code{adult}, \code{elderly}.
-#' @keywords internal
-.compute_plot_inputs <- function(results, index_vl_column = NULL) {
-  # Use summarized_data produced by the pipeline
-  sd <- results$summarized_data
-  if (is.null(sd) || !nrow(sd)) return(list(sd = NULL, ok = FALSE))
-
-  # Expected columns (from your new summarizers)
-  # HH, individual_ID, role, inf_date, inf_start_date, inf_end_date,
-  # infection.detected.start (if available)
-  needed <- c("HH","individual_ID","role","inf_date","inf_start_date","inf_end_date")
-  if (any(!needed %in% names(sd))) return(list(sd = NULL, ok = FALSE))
-
-  # Standardize role labels a bit
-  role_map <- c(infant = "toddler", sibling = "child", parent  = "adult", elder = "elderly")
-  sd$role_std <- tolower(as.character(sd$role))
-  sd$role_std <- ifelse(sd$role_std %in% names(role_map), role_map[sd$role_std], sd$role_std)
-  sd$role_std <- factor(sd$role_std, levels = c("child","toddler","adult","elderly"))
-
-  # Try to bring in a VL column, if user provides one (long tables often name it 'vl_test')
-  # We'll use it only for the SAR-by-VL plot to find index VL on index detection day.
-  vl_col <- NULL
-  if (!is.null(index_vl_column) && index_vl_column %in% names(results$person_day)) {
-    vl_col <- index_vl_column
-  } else if ("vl_test" %in% names(results$person_day)) {
-    vl_col <- "vl_test"
-  }
-
-  list(sd = sd, pd = results$person_day, vl_col = vl_col, ok = TRUE)
-}
-
-
-
 #' Daily infections plot (RSV/VL simulator)
 #'
 #' Aggregates simulated household data to daily new infections by role.
@@ -129,7 +78,6 @@
 }
 
 
-
 #' SAR by index viral load (RSV/VL simulator)
 #'
 #' Computes household secondary attack rate (SAR) and displays SAR by the
@@ -180,19 +128,15 @@
 }
 
 
-
 #' Make transmission plots (batch)
 #'
-#' Builds selected figures from either RSV/VL simulation outputs
-#' (\code{results$raw_simulation}) or legacy summary data via
-#' \code{.compute_plot_inputs()}.
+#' Builds selected figures from RSV/VL simulation outputs.
 #'
 #' @param results Pipeline result list.
 #' @param which Character vector of plot names among \code{"daily"},
 #'   \code{"weekly"}, \code{"sar"}, \code{"timeline"}, or \code{"all"}.
 #' @param print Logical; print each plot when \code{TRUE} (default).
-#' @param index_vl_column Optional character; viral-load column in
-#'   \code{person_day} (fallback \code{"vl_test"}).
+#' @param index_vl_column Optional character; viral-load column (unused, kept for API compatibility).
 #'
 #' @return Named list of \code{ggplot} objects for the requested plots
 #'   (a subset of \code{daily}, \code{weekly}, \code{timeline}, \code{sar}).
@@ -204,30 +148,28 @@
   if (identical(which, "all")) which <- c("daily","weekly","sar","timeline")
   out <- list()
 
-  # ===== RSV/VL path: plot directly from households =====
+  # Check for RSV/VL households
+  households <- NULL
+
   if (!is.null(results$raw_simulation) &&
       is.list(results$raw_simulation) &&
       length(results$raw_simulation) &&
       is.data.frame(results$raw_simulation[[1]]) &&
       all(c("hh_id","person_id","role","infection_time","detection_time")
           %in% names(results$raw_simulation[[1]]))) {
-
     households <- results$raw_simulation
+  } else if (!is.null(results$households) &&
+             is.list(results$households) &&
+             length(results$households) &&
+             is.data.frame(results$households[[1]])) {
+    households <- results$households
+  }
 
+  if (!is.null(households)) {
     if ("daily"    %in% which) out$daily    <- .rsv_plot_daily(households)
     if ("weekly"   %in% which) out$weekly   <- .rsv_plot_weekly(households)
     if ("timeline" %in% which) out$timeline <- .rsv_plot_timeline(households)
     if ("sar"      %in% which) out$sar      <- .rsv_plot_sar_by_index_vl(households)
-
-  } else {
-    # ===== Legacy path (unchanged) =====
-    inp <- .compute_plot_inputs(results, index_vl_column = index_vl_column)
-    if (isTRUE(inp$ok)) {
-      if ("daily"    %in% which) out$daily    <- NULL
-      if ("weekly"   %in% which) out$weekly   <- NULL
-      if ("timeline" %in% which) out$timeline <- NULL
-      if ("sar"      %in% which) out$sar      <- NULL
-    }
   }
 
   if (print && length(out)) for (nm in names(out)) print(out[[nm]])
