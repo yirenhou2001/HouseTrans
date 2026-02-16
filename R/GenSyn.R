@@ -232,7 +232,7 @@ GenSyn <- function(
 #' print(result)
 #' }
 #' @export
-#' @method plot GenSynResult
+#' @method print GenSynResult
 print.GenSynResult <- function(x, ...) {
   cat("GenSyn Result\n")
   cat("=============\n\n")

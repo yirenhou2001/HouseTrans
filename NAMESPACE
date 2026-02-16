@@ -2,6 +2,7 @@
 
 S3method(plot,GenSynResult)
 S3method(plot,TransmissionChainResult)
+S3method(print,GenSynResult)
 S3method(print,TransmissionChainResult)
 export(GenSyn)
 export(TransmissionChainAnalysis)

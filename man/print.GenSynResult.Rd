@@ -4,7 +4,7 @@
 \alias{print.GenSynResult}
 \title{Print method for GenSynResult}
 \usage{
-\method{plot}{GenSynResult}(x, ...)
+\method{print}{GenSynResult}(x, ...)
 }
 \arguments{
 \item{x}{A \code{GenSynResult} object.}
