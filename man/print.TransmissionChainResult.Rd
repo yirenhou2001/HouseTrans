@@ -2,47 +2,43 @@
 % Please edit documentation in R/TransmissionChainAnalysis.R
 \name{print.TransmissionChainResult}
 \alias{print.TransmissionChainResult}
-\title{Print a TransmissionChainResult}
+\title{Print method for TransmissionChainResult}
 \usage{
 \method{print}{TransmissionChainResult}(x, ...)
 }
 \arguments{
 \item{x}{A \code{TransmissionChainResult} object.}
 
-\item{...}{Passed to or from other methods (unused).}
+\item{...}{Unused.}
 }
 \value{
-\code{x}, returned invisibly.
+\code{x}, invisibly.
 }
 \description{
-Nicely prints sections available in a \code{TransmissionChainResult} returned by
-\code{\link{TransmissionChainAnalysis}}.
+Print method for TransmissionChainResult
 }
 \examples{
 \dontrun{
-T_max <- 12
+# Per-person episode format
+T_max <- 30
 df_person <- data.frame(
   hh_id = c("HH1","HH1","HH1","HH2","HH2","HH2"),
-  person_id = c(1,2,3,1,2,3),
-  role = c("adult","child","elderly","adult","child","elderly"),
+  person_id = c(1, 2, 3, 1, 2, 3),
+  role = c("adult","infant","elderly","adult","infant","elderly"),
   infection_time = c(2, 4, NA, 1, 3, NA),
   infectious_start = c(3, 6, NA, 2, 5, NA),
   infectious_end = c(8, 9, NA, 7, 9, NA),
   infection_resolved = c(9, 10, NA, 8, 10, NA)
 )
-seasonal_forcing_list <- list(
-  adult = rep(1, T_max), child = rep(1, T_max),
-  elderly = rep(1, T_max), toddler = rep(1, T_max)
-)
+
 result <- TransmissionChainAnalysis(
   user_data = df_person,
-  seasonal_forcing_list = seasonal_forcing_list,
   max_days = T_max,
-  stan_chains = 1, stan_iter = 300, stan_warmup = 150
+  stan_chains = 2,
+  stan_iter = 1000,
+  stan_warmup = 500
 )
+
 print(result)
 }
-}
-\seealso{
-\code{\link{TransmissionChainAnalysis}}
 }

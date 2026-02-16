@@ -2,108 +2,124 @@
 % Please edit documentation in R/TransmissionChainAnalysis.R
 \name{TransmissionChainAnalysis}
 \alias{TransmissionChainAnalysis}
-\title{TransmissionChainAnalysis: analyze user-supplied household data}
+\title{Analyze User-Supplied Household Transmission Data}
 \usage{
 TransmissionChainAnalysis(
   user_data,
-  index_vl_column = "vl_test",
   start_date = as.Date("2024-01-01"),
   end_date = as.Date("2024-12-31"),
+  surveillance_df = NULL,
   seasonal_forcing_list = NULL,
-  max_days = 365,
-  stan_file = "model.stan",
+  max_days = NULL,
+  use_vl_data = TRUE,
+  priors = NULL,
+  covariates_susceptibility = NULL,
+  covariates_infectivity = NULL,
+  recovery_params = NULL,
+  imputation_params = NULL,
+  role_levels = c("adult", "infant", "toddler", "elderly"),
   stan_chains = 4,
   stan_iter = 2000,
   stan_warmup = 1000,
-  stan_control = list(adapt_delta = 0.99, max_treedepth = 20),
-  stan_init = "random",
-  stan_refresh = 50,
+  stan_control = list(adapt_delta = 0.95, max_treedepth = 15),
   stan_cores = 4,
-  vl_mode = c("auto", "from_long"),
-  vl_source = c("column", "simulate", "none"),
-  vl_column = NULL,
-  role_levels = c("adult", "child", "elderly", "toddler")
+  stan_refresh = 50,
+  seed = NULL
 )
 }
 \arguments{
-\item{user_data}{A data.frame or a list of data.frames describing household testing
-or episode data (see Details for accepted shapes). Lists are row-bound internally.}
+\item{user_data}{A data.frame or list of data.frames with household data.
+Accepts two formats:
+\itemize{
+\item \strong{Long testing table}: columns \code{HH}, \code{individual_ID},
+\code{role}, \code{test_date}, \code{infection_status} (and optionally
+a viral load column)
+\item \strong{Per-person episode table}: columns \code{hh_id}, \code{person_id},
+\code{role}, \code{infection_time}, \code{infectious_start},
+\code{infectious_end}, \code{infection_resolved}
+}}
 
-\item{index_vl_column}{Optional character; name of the viral-load (VL) column used by SAR-by-VL plotting. Defaults to \code{"vl_test"} when present.}
+\item{start_date, end_date}{Date objects or character; study period bounds.}
 
-\item{start_date, end_date}{\code{Date} study window.}
+\item{surveillance_df}{Optional data frame with 'date' and 'cases' columns for
+seasonal forcing.}
 
-\item{seasonal_forcing_list}{Optional named list of role vectors for forcing.}
+\item{seasonal_forcing_list}{Optional named list with seasonal forcing vectors
+for each role.}
 
-\item{max_days}{Integer; maximum modeled days.}
+\item{max_days}{Integer; maximum time horizon (days).}
 
-\item{stan_file}{Path to a Stan model file.}
+\item{use_vl_data}{Logical; whether to use viral load data in estimation.}
+
+\item{priors}{Named list; prior specifications for Stan model. Each element
+should be a list with \code{dist} ("normal", "uniform", "lognormal") and
+\code{params} (parameter vector).}
+
+\item{covariates_susceptibility}{Character vector; column names for susceptibility
+covariates in the data.}
+
+\item{covariates_infectivity}{Character vector; column names for infectivity
+covariates in the data.}
+
+\item{recovery_params}{Named list; Gamma parameters (shape, scale) for immunity
+tail duration by role.}
+
+\item{imputation_params}{Named list; parameters for viral curve imputation by role.}
+
+\item{role_levels}{Character vector; canonical role levels for normalization.}
 
 \item{stan_chains, stan_iter, stan_warmup}{Integers; Stan sampling controls.}
 
-\item{stan_control}{List; passed to \code{rstan::sampling(..., control = ...)}.}
+\item{stan_control}{List; Stan control parameters.}
 
-\item{stan_init}{Character or function; Stan initialization.}
+\item{stan_cores}{Integer; number of CPU cores for Stan.}
 
-\item{stan_refresh}{Integer; Stan refresh rate.}
+\item{stan_refresh}{Integer; refresh rate for Stan output.}
 
-\item{stan_cores}{Integer; CPU cores for Stan.}
-
-\item{vl_mode}{One of \code{c("auto","from_long")} indicating how to derive VL.}
-
-\item{vl_source}{One of \code{c("column","simulate","none")} indicating the VL source.}
-
-\item{vl_column}{Optional character; the VL column when \code{vl_source="column"}.}
-
-\item{role_levels}{Character vector; canonical role levels for normalization.}
+\item{seed}{Integer; random seed for reproducibility.}
 }
 \value{
 An object of class \code{"TransmissionChainResult"} containing:
-\itemize{
-\item \code{$results}: Contains \code{fit} (the Stan object) and \code{posterior_summary}.
-\item \code{$postprocessing}: Stan posterior summary.
-\item \code{$plot_list}: named list of ggplot objects when built.
+\describe{
+\item{$call}{The matched call}
+\item{$user_data}{The processed user data}
+\item{$stan_data}{Data prepared for Stan}
+\item{$fit}{The stanfit object}
+\item{$postprocessing}{Tidy posterior summary}
+\item{$transmission_chains}{Reconstructed transmission links}
 }
 }
 \description{
-Runs the end-to-end workflow on \emph{user-provided} data using
-Bayesian Stan estimation. This function does not simulate data;
-it expects input in tabular form (see Details).
-}
-\details{
-\strong{Accepted input shapes}:
-\itemize{
-\item Long testing table with columns like \code{HH}, \code{individual_ID}, \code{role},
-\code{test_date}, \code{infection_status}, and optionally a VL column.
-\item Per-person episode table with \code{hh_id}, \code{person_id}, \code{role},
-\code{infection_time}, \code{infectious_start}, \code{infectious_end},
-and optionally a viral-load trajectory.
-}
+Runs Bayesian estimation on user-provided household testing or episode data.
+This function does not simulate data; it expects input in tabular form.
 }
 \examples{
 \dontrun{
-T_max <- 12
+# Per-person episode format
+T_max <- 30
 df_person <- data.frame(
   hh_id = c("HH1","HH1","HH1","HH2","HH2","HH2"),
-  person_id = c(1,2,3,1,2,3),
-  role = c("adult","child","elderly","adult","child","elderly"),
+  person_id = c(1, 2, 3, 1, 2, 3),
+  role = c("adult","infant","elderly","adult","infant","elderly"),
   infection_time = c(2, 4, NA, 1, 3, NA),
   infectious_start = c(3, 6, NA, 2, 5, NA),
   infectious_end = c(8, 9, NA, 7, 9, NA),
   infection_resolved = c(9, 10, NA, 8, 10, NA)
 )
-seasonal_forcing_list <- list(
-  adult = rep(1, T_max), child = rep(1, T_max),
-  elderly = rep(1, T_max), toddler = rep(1, T_max)
-)
+
 result <- TransmissionChainAnalysis(
   user_data = df_person,
-  seasonal_forcing_list = seasonal_forcing_list,
   max_days = T_max,
-  stan_chains = 1, stan_iter = 300, stan_warmup = 150
+  stan_chains = 2,
+  stan_iter = 1000,
+  stan_warmup = 500
 )
+
+print(result)
+plot(result, which = "posterior")
 }
+
 }
 \seealso{
-\code{\link{main_parameter_estimation_pipeline}}, \code{\link{GenSyn}}
+\code{\link{GenSyn}}, \code{\link{plot.TransmissionChainResult}}
 }

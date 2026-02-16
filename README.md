@@ -1,11 +1,10 @@
-Household.Transmission.Chain.Data.Analysis
-================
+# HouseTrans
 
 <!-- badges: start -->
-[![R-CMD-check](https://github.com/yirenhou2001/Household.Transmission.Chain.Data.Analysis/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/yirenhou2001/Household.Transmission.Chain.Data.Analysis/actions/workflows/R-CMD-check.yaml)
+[![R-CMD-check](https://github.com/yirenhou2001/HouseTrans/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/yirenhou2001/HouseTrans/actions/workflows/R-CMD-check.yaml)
 <!-- badges: end -->
 
-This package provides a streamlined pipeline to simulate household infection dynamics, estimate transmission parameters, and visualize epidemic timelines. It uses a Bayesian approach with `rstan` that models transmission probability as a function of viral load (VL), seasonality, and role-specific susceptibility/infectivity.
+A Bayesian framework for simulating household infection dynamics and estimating transmission parameters using Stan. The model incorporates viral load dynamics, seasonal forcing, role-specific susceptibility/infectivity, covariates (e.g., vaccination status), and support for reinfections with waning immunity.
 
 ## Core Workflow
 
@@ -17,145 +16,261 @@ This package provides a streamlined pipeline to simulate household infection dyn
 2. **`TransmissionChainAnalysis()`**: User data analysis
    - Estimates transmission parameters from your own observational data
    - Accepts either long-format testing data or per-person episode tables
+   
+## Features
+
+- **Household transmission modeling** with role-specific parameters (adult, infant, toddler, elderly)
+- **Viral load dynamics** using double-exponential (log10) or piecewise linear (Ct) trajectories
+- **Covariate support** for susceptibility and infectivity modifiers (e.g., vaccination efficacy)
+- **Reinfection modeling** with gamma-distributed waning immunity
+- **Interval sampling** for infection timing with recovery tail modeling
+- **Flexible Bayesian priors** (Normal, Uniform, LogNormal)
+- **Pre-compiled Stan model** for faster fitting
+- **Covariate-aware transmission chain reconstruction** from posterior estimates
+- **Comprehensive visualization** tools
 
 ## Installation
 
 ```r
 # Install from GitHub
-devtools::install_github("yirenhou2001/Household.Transmission.Chain.Data.Analysis")
+devtools::install_github("yirenhou2001/HouseTrans")
 ```
 
 ## Quick Start
 
-### 1) Simulate and estimate
+### 1. Simulate and Estimate (GenSyn)
 
 ```r
-library(Household.Transmission.Chain.Data.Analysis)
+library(HouseTrans)
 
-# Define seasonal forcing (length must match max_days)
-seasonal_forcing_list <- list(
-  adult   = rep(0.1, 365),
-  child   = rep(0.1, 365),
-  elderly = rep(0.1, 365),
-  toddler = rep(0.1, 365)
+# Basic simulation with estimation
+result <- GenSyn(
+  n_households = 50,
+  start_date = "2024-07-01",
+  end_date = "2025-06-30",
+  stan_chains = 2,
+  stan_iter = 1000,
+  stan_warmup = 500,
+  seed = 123
+)
+
+# View results
+print(result)
+
+# Plot posterior distributions
+plot(result, which = "posterior")
+```
+
+### 2. With Covariates (e.g., Vaccination)
+
+```r
+# Define vaccination covariate
+vacc_config <- list(
+  list(
+    name = "vacc_status",
+    efficacy = 0.8,
+    effect_on = "both",  # affects susceptibility and infectivity
+    coverage = list(infant = 0.8, toddler = 0, adult = 0, elderly = 0)
+  )
 )
 
 result <- GenSyn(
   n_households = 50,
-  print_plots  = TRUE,
-  seasonal_forcing_list = seasonal_forcing_list,
-  max_days     = 365,
-  
-  # Stan sampling controls
-  stan_chains  = 4,
-  stan_iter    = 2000,
-  stan_warmup  = 1000,
-  stan_control = list(adapt_delta = 0.99, max_treedepth = 20),
-  stan_cores   = 4
+  covariates_config = vacc_config,
+  covariates_susceptibility = "vacc_status",
+  covariates_infectivity = "vacc_status",
+  stan_chains = 2,
+  stan_iter = 1000
 )
 
-# View posterior summary
-print(result$postprocessing)
+# View covariate effects
+plot(result, which = "covariate_effects")
 ```
 
-### 2) Analyze your own data
+### 3. Analyze Your Own Data (TransmissionChainAnalysis)
 
 ```r
 # Per-person episode format
-T_max <- 30
 df_person <- data.frame(
-  hh_id             = c("HH1","HH1","HH1","HH2","HH2","HH2"),
-  person_id         = c(1, 2, 3, 1, 2, 3),
-  role              = c("adult","child","elderly","adult","child","elderly"),
-  infection_time    = c(2, 4, NA, 1, 3, NA),
-  infectious_start  = c(3, 6, NA, 2, 5, NA),
-  infectious_end    = c(8, 9, NA, 7, 9, NA),
-  infection_resolved= c(9, 10, NA, 8, 10, NA)
-)
-
-seasonal_forcing_list <- list(
-  adult   = rep(1, T_max),
-  child   = rep(1, T_max),
-  elderly = rep(1, T_max),
-  toddler = rep(1, T_max)
+  hh_id = c("HH1","HH1","HH1","HH2","HH2","HH2"),
+  person_id = c(1, 2, 3, 1, 2, 3),
+  role = c("adult","infant","elderly","adult","infant","elderly"),
+  infection_time = c(2, 4, NA, 1, 3, NA),
+  infectious_start = c(3, 6, NA, 2, 5, NA),
+  infectious_end = c(8, 9, NA, 7, 9, NA),
+  infection_resolved = c(9, 10, NA, 8, 10, NA)
 )
 
 result <- TransmissionChainAnalysis(
-  user_data             = df_person,
-  seasonal_forcing_list = seasonal_forcing_list,
-  max_days              = T_max,
-  
-  # Light Stan settings for quick testing
-  stan_chains  = 1,
-  stan_iter    = 500,
-  stan_warmup  = 250,
-  stan_control = list(adapt_delta = 0.98, max_treedepth = 12),
-  stan_cores   = 1
+  user_data = df_person,
+  max_days = 30,
+  stan_chains = 2,
+  stan_iter = 1000,
+  stan_warmup = 500
 )
+
+print(result)
+
+# Plot epidemic curve of your data
+plot(result, which = "epidemic_curve")
 ```
 
 ## Input Data Formats
 
-### Per-person episode table (recommended) (auto-generates placeholders if `vl_full_trajectory` specification is missing)
+### Per-person Episode Table (recommended)
 
-| Column             | Description                                    |
-|--------------------|------------------------------------------------|
-| `hh_id`            | Household identifier                           |
-| `person_id`        | Individual ID within household                 |
-| `role`             | Family role: "adult", "child", "toddler", "elderly" |
-| `infection_time`   | Day of infection onset (NA if not infected)    |
-| `infectious_start` | Day infectiousness begins                      |
-| `infectious_end`   | Day infectiousness ends                        |
-| `infection_resolved` | Day infection resolves                       |
+| Column | Description |
+|--------|-------------|
+| `hh_id` | Household identifier |
+| `person_id` | Individual ID within household |
+| `role` | Family role: "adult", "infant", "toddler", "elderly" |
+| `infection_time` | Day of infection onset (NA if not infected) |
+| `infectious_start` | Day infectiousness begins |
+| `infectious_end` | Day infectiousness ends |
+| `infection_resolved` | Day infection resolves |
 
-### Long-format testing table (uses `vl_source` specification to decide the viral load source)
+### Long-format Testing Table
 
-| Column             | Description                                    |
-|--------------------|------------------------------------------------|
-| `HH`               | Household identifier                           |
-| `individual_ID`    | Individual ID within household                 |
-| `role`             | Family role                                    |
-| `test_date`        | Integer day or Date object                     |
-| `infection_status` | Binary (0/1) indicating positive test          |
+| Column | Description |
+|--------|-------------|
+| `HH` | Household identifier |
+| `individual_ID` | Individual ID within household |
+| `role` | Family role |
+| `test_date` | Integer day or Date object |
+| `infection_status` | Binary (0/1) indicating positive test |
 
-## Outputs
+## Surveillance Data
 
-Both main functions return a result object containing:
+**Surveillance data** is real-world disease monitoring data from public health agencies (e.g., CDC, local health departments). It provides daily or weekly case counts representing the actual epidemic in the community.
 
-- **`$results`**: Raw pipeline output including:
-  - `fit`: The `stanfit` object
-  - `stan_data`: Data passed to Stan
-  - `posterior_summary`: Tidy summary of posteriors
+### Purpose
 
-- **`$postprocessing`**: Clean summary table with posterior mean, SD, and 95% credible intervals for:
-  - Role-specific susceptibility (`phi`)
-  - Role-specific infectivity (`kappa`)
-  - Latent period mean (`latent_mean`)
+1. **Seasonal forcing**: Tells the model when the virus was circulating in the community. High case counts = higher community transmission risk.
+2. **Validation**: For `GenSyn()`, overlay simulated infections against real surveillance to validate your simulation matches real-world patterns.
+3. **Context**: For `TransmissionChainAnalysis()`, optionally overlay your household data against population-level trends.
 
-- **`$plot_list`**: Named list of `ggplot2` objects (when requested)
-
-## Visualization
-
-Built-in plotting capabilities are available via the `plots` argument for **`GenSyn()`**:
-
-- **`"daily"`**: Daily infections by role
-- **`"weekly"`**: Weekly infections by role  
-- **`"timeline"`**: Per-household infection and detection timelines
-- **`"sar"`**: Secondary attack rate by index case viral load
+### Format
 
 ```r
-# Generate all plots
+surveillance_df <- data.frame(
+  date = seq(as.Date("2024-07-01"), as.Date("2025-06-30"), by = "day"),
+  cases = c(10, 12, 15, 20, 25, 30, ...)  # daily case counts
+)
+```
+
+### Usage
+
+```r
+# With GenSyn - surveillance affects simulation AND creates comparison plot
 result <- GenSyn(
   n_households = 50,
-  plots = c("daily", "weekly", "timeline", "sar"),
-  print_plots = TRUE
+  surveillance_df = surveillance_df,  # Used for seasonal forcing
+  start_date = "2024-07-01",
+  end_date = "2025-06-30"
+)
+plot(result, which = "epidemic_curve")  # Compares simulation to surveillance
+
+# With TransmissionChainAnalysis - optional overlay on your data
+result <- TransmissionChainAnalysis(
+  user_data = df_person,
+  surveillance_df = surveillance_df  # Optional: for comparison plot
+)
+plot(result, which = "epidemic_curve")  # Shows your data, optionally with surveillance
+```
+
+## Advanced Configuration
+
+### Prior Configuration
+
+Customize priors using a named list:
+
+```r
+my_priors <- list(
+  beta1 = list(dist = "normal", params = c(-5, 1)),
+  beta2 = list(dist = "normal", params = c(-5, 1)),
+  alpha = list(dist = "normal", params = c(-6, 2)),
+  covariates = list(dist = "normal", params = c(0, 1)),
+  gen_shape = list(dist = "lognormal", params = c(1.5, 0.5)),
+  gen_rate = list(dist = "lognormal", params = c(0.0, 0.5)),
+  ct50 = list(dist = "normal", params = c(35.0, 3.0)),
+  slope = list(dist = "lognormal", params = c(0.4, 0.5))
 )
 
-# Access individual plots
-result$plot_list$daily
-result$plot_list$weekly
-result$plot_list$timeline
-result$plot_list$sar
+result <- GenSyn(n_households = 50, priors = my_priors)
+```
+
+### Recovery Parameters
+
+Customize the immunity waning tail by role:
+
+```r
+recovery_params <- list(
+  adult   = list(shape = 2, scale = 3),
+  infant  = list(shape = 2, scale = 3),
+  toddler = list(shape = 2, scale = 3),
+  elderly = list(shape = 2, scale = 3)
+)
+
+result <- TransmissionChainAnalysis(
+  user_data = df_person,
+  recovery_params = recovery_params
+)
+```
+
+### Viral Curve Imputation Parameters
+
+Customize mechanistic viral curve imputation:
+
+```r
+# For Ct data
+imputation_params <- list(
+  adult   = list(Cpeak = 33, r = 1.5, d = 1.2, t_peak = 5),
+  infant  = list(Cpeak = 33.3, r = 2.11, d = 1.38, t_peak = 5.06),
+  toddler = list(Cpeak = 34, r = 1.26, d = 1.27, t_peak = 4.75),
+  elderly = list(Cpeak = 33, r = 1.49, d = 1.22, t_peak = 5.14)
+)
+
+# For log10 viral load data
+imputation_params <- list(
+  adult   = list(v_p = 4.14, t_p = 5.09, lambda_g = 2.31, lambda_d = 2.71),
+  infant  = list(v_p = 5.84, t_p = 4.09, lambda_g = 2.82, lambda_d = 1.01),
+  toddler = list(v_p = 5.84, t_p = 4.09, lambda_g = 2.82, lambda_d = 1.01),
+  elderly = list(v_p = 2.95, t_p = 5.1, lambda_g = 3.15, lambda_d = 0.87)
+)
+```
+
+## Available Plots
+
+Use `plot(result, which = "...")` with:
+
+### For GenSynResult
+
+| Plot | Description |
+|------|-------------|
+| `"posterior"` | Posterior distributions of phi/kappa by role |
+| `"covariate_effects"` | Forest plot of covariate coefficients |
+| `"epidemic_curve"` | Simulated infections vs surveillance data |
+| `"transmission_chains"` | Transmission link probabilities for a household |
+| `"all"` | All available plots |
+
+### For TransmissionChainResult
+
+| Plot | Description |
+|------|-------------|
+| `"posterior"` | Posterior distributions of phi/kappa by role |
+| `"covariate_effects"` | Forest plot of covariate coefficients |
+| `"epidemic_curve"` | User data infections (with optional surveillance overlay) |
+| `"transmission_chains"` | Transmission link probabilities for a household |
+| `"all"` | All available plots |
+
+### Plot Options
+
+```r
+# Transmission chain plot for specific household
+plot(result, which = "transmission_chains", hh_id = 3, prob_cutoff = 0.1)
+
+# Epidemic curve with custom bin width (default: 7 days)
+plot(result, which = "epidemic_curve", bin_width = 14)
 ```
 
 ## Model Details
@@ -163,12 +278,36 @@ result$plot_list$sar
 The Stan model estimates:
 
 - **`phi[role]`**: Role-specific susceptibility multipliers
-- **`kappa[role]`**: Role-specific infectivity multipliers  
-- **`latent_mean`**: Mean latent period (soft-gate transition to infectiousness)
+- **`kappa[role]`**: Role-specific infectivity multipliers
+- **`beta1`**: Baseline transmission coefficient
+- **`beta2`**: Viral load contribution to transmission
+- **`alpha_comm`**: Community transmission rate
+- **`gen_shape`, `gen_rate`**: Generation interval parameters
+- **`Ct50`, `slope_ct`**: Viral load infectivity parameters
+- **`beta_susc`, `beta_inf`**: Covariate coefficients (when covariates specified)
 
-Transmission probability incorporates:
-- Viral load dynamics using a double-exponential trajectory model
-- Seasonal forcing patterns
-- Household size scaling
-- Contact structure within households
+## Output Structure
 
+### GenSynResult
+
+- `$call`: The matched function call
+- `$n_households`: Number of households simulated
+- `$simulation`: Raw simulation output (`hh_df`, `diagnostic_df`)
+- `$surveillance_df`: Surveillance data (if provided)
+- `$start_date`, `$end_date`: Study period
+- `$stan_data`: Data prepared for Stan
+- `$fit`: The stanfit object
+- `$postprocessing`: Tidy posterior summary
+- `$attack_rates`: Primary attack rate and reinfection summaries
+- `$transmission_chains`: Reconstructed transmission links
+
+### TransmissionChainResult
+
+- `$call`: The matched function call
+- `$user_data`: The processed input data
+- `$surveillance_df`: Surveillance data (if provided)
+- `$start_date`, `$end_date`: Study period
+- `$stan_data`: Data prepared for Stan
+- `$fit`: The stanfit object
+- `$postprocessing`: Tidy posterior summary
+- `$transmission_chains`: Reconstructed transmission links

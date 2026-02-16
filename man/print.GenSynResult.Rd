@@ -2,9 +2,9 @@
 % Please edit documentation in R/GenSyn.R
 \name{print.GenSynResult}
 \alias{print.GenSynResult}
-\title{Print method for \code{GenSynResult}}
+\title{Print method for GenSynResult}
 \usage{
-\method{print}{GenSynResult}(x, ...)
+\method{plot}{GenSynResult}(x, ...)
 }
 \arguments{
 \item{x}{A \code{GenSynResult} object.}
@@ -15,19 +15,22 @@
 \code{x}, invisibly.
 }
 \description{
-Print method for \code{GenSynResult}
+Print method for GenSynResult
 }
 \examples{
 \dontrun{
-# Simulate and estimate
-seasonal_forcing_list <- list(
-  adult=rep(0.1,365), child=rep(0.1,365), elderly=rep(0.1,365), toddler=rep(0.1,365)
+# Basic simulation
+result <- GenSyn(
+  n_households = 50,
+  start_date = "2024-07-01",
+  end_date = "2025-06-30",
+  stan_chains = 2,
+  stan_iter = 1000,
+  stan_warmup = 500,
+  seed = 123
 )
-fit <- GenSyn(
-  n_households=50,
-  seasonal_forcing_list=seasonal_forcing_list, max_days=365,
-  stan_chains=4, stan_iter=2000, stan_warmup=1000, stan_cores=4
-)
-print(fit)
+
+# View results
+print(result)
 }
 }

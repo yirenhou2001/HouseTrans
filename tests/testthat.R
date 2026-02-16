@@ -7,6 +7,6 @@
 # * https://testthat.r-lib.org/articles/special-files.html
 
 library(testthat)
-library(Household.Transmission.Chain.Data.Analysis)
+library(HouseTrans)
 
-test_check("Household.Transmission.Chain.Data.Analysis")
+test_check("HouseTrans")

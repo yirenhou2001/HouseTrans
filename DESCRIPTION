@@ -1,42 +1,56 @@
-Package: Household.Transmission.Chain.Data.Analysis
-Title: Household Transmission Chain Simulation and Estimation
-Version: 0.0.0.9000
+Package: HouseTrans
+Title: Bayesian Household Transmission Chain Analysis with Viral Load Dynamics
+Version: 0.0.9
 Authors@R: c(
   person(given = "Ke", family = "Li",
          email = "ke.li.kl662@yale.edu",
-         role = c("aut")),
+         role = c("aut","cre")),
   person(given = "Yiren", family = "Hou",
          email = "yiren.hou@yale.edu",
-         role = c("aut", "cre"))
+         role = c("aut"))
 	)
-Description: Simulates and analyzes household transmission chains incorporating 
-    explicit viral load dynamics. The package provides three main capabilities. 
-    (1) Synthetic data generation with role-specific susceptibility and infectivity, 
-    community acquisition, within-household transmission driven by time-varying 
-    viral loads, and configurable surveillance testing; (2) Data preprocessing that 
-    constructs person-day panels and test-time matrices suitable for Bayesian inference, 
-    including time-since-infection tracking for latent period modeling; (3) Parameter 
-    estimation via Stan-based Markov chain Monte Carlo for community and household 
-    transmission rates, with support for estimating latent period duration. Includes 
-    diagnostic plots for infection timelines, secondary attack rates stratified by 
-    index case viral load, and aggregated incidence summaries. Designed for respiratory 
-    pathogens where transmission probability depends on the infector's viral shedding trajectory.
+Description: Provides a streamlined pipeline to simulate household infection 
+    dynamics, estimate transmission parameters, and visualize epidemic timelines. 
+    Uses a Bayesian approach with Stan that models transmission probability as a
+    Function of viral load, seasonality and infectivity, multiple infection 
+    episodes (reinfections), and waning immunity modeling.
 License: MIT + file LICENSE
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
-Imports:
-    data.table,
-    dplyr,
-    ggplot2,
-    tibble,
+Biarch: true
+Depends: 
+    R (>= 3.5.0)
+Imports: 
+    gridExtra,
+    methods,
+    Rcpp (>= 0.12.0),
+    rstan (>= 2.26.0),
+    rstantools (>= 2.3.0),
+    dplyr (>= 1.0.0),
     tidyr,
-    utils,
-    rstan,
-    stats
+    tibble,
+    ggplot2,
+    data.table,
+    scales,
+    rlang,
+    stats,
+    utils
 Suggests: 
     testthat (>= 3.0.0),
     knitr,
-    rmarkdown
+    rmarkdown,
+    ggpubr
+LinkingTo: 
+    BH (>= 1.66.0),
+    Rcpp (>= 0.12.0),
+    RcppEigen (>= 0.3.3.3.0),
+    RcppParallel (>= 5.0.1),
+    rstan (>= 2.26.0),
+    StanHeaders (>= 2.26.0)
+SystemRequirements: GNU make
 VignetteBuilder: knitr
+LazyData: true
 Config/testthat/edition: 3
+URL: https://github.com/yirenhou2001/HouseTrans
+BugReports: https://github.com/yirenhou2001/HouseTrans

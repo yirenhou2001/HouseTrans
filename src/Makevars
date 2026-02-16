@@ -1,0 +1,12 @@
+# Makevars for Stan model compilation
+
+CXX_STD = CXX17
+
+STANHEADERS_SRC := $(shell "$(R_HOME)/bin/Rscript" -e "cat(system.file('include','src',package='StanHeaders'))")
+
+PKG_CPPFLAGS = -I../inst/include -I$(STANHEADERS_SRC) \
+               $(shell "$(R_HOME)/bin/Rscript" -e "RcppParallel::CxxFlags()") \
+               $(shell "$(R_HOME)/bin/Rscript" -e "StanHeaders:::CxxFlags()")
+
+PKG_LIBS = $(shell "$(R_HOME)/bin/Rscript" -e "RcppParallel::LdFlags()") \
+           $(shell "$(R_HOME)/bin/Rscript" -e "StanHeaders:::LdFlags()")

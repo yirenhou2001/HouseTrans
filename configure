@@ -1,0 +1,12 @@
+#!/bin/sh
+
+# Configure script for Stan model compilation
+# This script is called during package installation
+
+# Check for GNU make
+if [ -z "${MAKE}" ]; then
+  MAKE=make
+fi
+
+# Set up the src directory
+"${R_HOME}/bin/Rscript" -e "rstantools::rstan_config()"

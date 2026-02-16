@@ -4,3 +4,5 @@
 ^.*\.RData$
 ^README\.Rmd$
 ^\.github$
+^.*\.Rproj$
+^\.Rproj\.user$

@@ -1,0 +1,10 @@
+---
+title: "Getting Started: Simulation and Estimation for Household Transmission"
+author: "HouseTrans"
+date: "`r format(Sys.Date())`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Getting Started}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---

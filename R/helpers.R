@@ -1,23 +1,13 @@
-#' Package imports and internal aliases
-#'
-#' Internal namespace declarations and lightweight helpers.
-#'
-#' @name imports
+#' @title Helper Functions and Defaults
+#' @description Utility functions, default parameters, and internal helpers
+#' @name helpers
 #' @keywords internal
-#' @import data.table
-#' @import rstan
-#' @importFrom stats rnorm rbinom runif rgamma setNames sd
-#' @importFrom data.table setnames
-#' @importFrom utils globalVariables modifyList
-#' @importFrom dplyr %>% mutate group_by summarise summarize filter count left_join arrange slice ungroup row_number n
-#' @importFrom ggplot2 ggplot aes geom_col labs theme_classic facet_wrap
-#' @importFrom ggplot2 scale_color_manual theme_bw geom_point geom_boxplot position_jitter
-#' @importFrom tidyr pivot_longer
-#' @importFrom tibble tibble
-#' @importFrom utils head
-#' @noRd
 NULL
 
+
+# ==============================================================================
+# NULL-COALESCING OPERATOR
+# ==============================================================================
 
 #' Null-coalescing operator
 #'
@@ -30,27 +20,11 @@ NULL
 `%||%` <- function(a, b) if (is.null(a)) b else a
 
 
-#' Rescaled Gaussian infectivity profile
-#'
-#' Computes a Gaussian-shaped infectivity profile rescaled to have maximum 1.
-#'
-#' @param t Numeric vector of time points.
-#' @param peak_day Numeric; day of peak infectivity.
-#' @param width Numeric; width parameter (standard deviation) of the Gaussian.
-#'
-#' @return Numeric vector of rescaled infectivity values in \[0, 1\].
-#' @keywords internal
-#' @noRd
-g_rescaled <- function(t, peak_day, width) {
-  if (length(t) == 0) return(numeric(0))
-  vals <- exp(-0.5 * ((t - peak_day) / width)^2)
-  mx <- max(vals, na.rm = TRUE)
-  if (!is.finite(mx) || mx <= 0) return(vals)
-  vals / mx
-}
+# ==============================================================================
+# VIRAL LOAD / CT TRAJECTORY FUNCTIONS
+# ==============================================================================
 
-
-#' Simulate viral load trajectory
+#' Simulate viral load trajectory (log10)
 #'
 #' Computes log10 viral load over time using a double-exponential model.
 #'
@@ -65,17 +39,18 @@ g_rescaled <- function(t, peak_day, width) {
 #' @noRd
 simulate_viral_load_trajectory <- function(t, v_p, t_p, lambda_g, lambda_d) {
   vt <- 2 * 10^v_p / (exp(-lambda_g * (t - t_p)) + exp(lambda_d * (t - t_p)))
-  return(log10(vt))
+  return(log10(pmax(1e-9, vt)))
 }
 
 
 #' Simulate Ct (cycle threshold) trajectory
 #'
 #' Computes Ct values over time using a piecewise linear model.
+#' Note: Lower Ct = higher viral load.
 #'
 #' @param t Numeric vector of time points (days since infection).
 #' @param Cpeak Numeric; peak (minimum) Ct value.
-#' @param r Numeric; rise rate (Ct increase per day before peak).
+#' @param r Numeric; rise rate (Ct decrease per day before peak).
 #' @param d Numeric; decay rate (Ct increase per day after peak).
 #' @param t_peak Numeric; time to peak (days).
 #'
@@ -88,12 +63,12 @@ simulate_Ct_trajectory <- function(t, Cpeak, r, d, t_peak) {
 }
 
 
-#' Draw random viral load parameters for a role
+#' Draw viral load parameters for a role
 #'
 #' Retrieves viral load trajectory parameters for a given role from a parameter list.
 #'
-#' @param role Character; one of "adult", "child", "toddler", "elderly".
-#' @param params Named list of role-specific VL parameters (default: \code{default_VL_params}).
+#' @param role Character; one of "adult", "infant", "toddler", "elderly".
+#' @param params Named list of role-specific VL parameters.
 #'
 #' @return Named list with elements \code{v_p}, \code{t_p}, \code{lambda_g}, \code{lambda_d}.
 #' @keywords internal
@@ -105,12 +80,12 @@ draw_random_VL_params <- function(role, params = default_VL_params) {
 }
 
 
-#' Draw random Ct parameters for a role
+#' Draw Ct parameters for a role
 #'
 #' Retrieves Ct trajectory parameters for a given role from a parameter list.
 #'
-#' @param role Character; one of "adult", "child", "toddler", "elderly".
-#' @param params Named list of role-specific Ct parameters (default: \code{default_Ct_params}).
+#' @param role Character; one of "adult", "infant", "toddler", "elderly".
+#' @param params Named list of role-specific Ct parameters.
 #'
 #' @return Named list with elements \code{Cpeak}, \code{r}, \code{d}, \code{t_peak}.
 #' @keywords internal
@@ -122,9 +97,62 @@ draw_random_Ct_params <- function(role, params = default_Ct_params) {
 }
 
 
+#' Compute theoretical Ct trajectory
+#'
+#' @param t Days since infection.
+#' @param p List with Cpeak, r, d, t_peak.
+#' @return Ct value.
+#' @keywords internal
+#' @noRd
+.get_theoretical_ct <- function(t, p) {
+  ifelse(t <= p$t_peak,
+         p$Cpeak + p$r * (p$t_peak - t),
+         p$Cpeak + p$d * (t - p$t_peak))
+}
+
+
+#' Compute theoretical log10 viral load trajectory
+#'
+#' @param t Days since infection.
+#' @param p List with v_p, t_p, lambda_g, lambda_d.
+#' @return Log10 viral load.
+#' @keywords internal
+#' @noRd
+.get_theoretical_vl <- function(t, p) {
+  numerator <- 2 * 10^(p$v_p)
+  denominator <- exp(-p$lambda_g * (t - p$t_p)) + exp(p$lambda_d * (t - p$t_p))
+  vt <- numerator / denominator
+  return(log10(pmax(1e-9, vt)))
+}
+
+
+#' Calculate curve value for imputation
+#'
+#' @param t Days since infection.
+#' @param p Parameters list.
+#' @param is_ct Logical; TRUE for Ct, FALSE for VL.
+#' @return Curve value.
+#' @keywords internal
+#' @noRd
+.calc_curve_val <- function(t, p, is_ct) {
+  if (is_ct) {
+    return(ifelse(t <= p$t_peak,
+                  p$Cpeak + p$r * (p$t_peak - t),
+                  p$Cpeak + p$d * (t - p$t_peak)))
+  } else {
+    val <- 2 * 10^p$v_p / (exp(-p$lambda_g * (t - p$t_p)) + exp(p$lambda_d * (t - p$t_p)))
+    return(log10(pmax(1e-9, val)))
+  }
+}
+
+
+# ==============================================================================
+# HOUSEHOLD GENERATION
+# ==============================================================================
+
 #' Generate household roles based on country profile
 #'
-#' Samples household composition (adults, children, toddlers, elderly) based
+#' Samples household composition (adults, infants, toddlers, elderly) based
 #' on probability parameters in a country/region profile.
 #'
 #' @param country_profile Named list with \code{prob_single_parent} (numeric),
@@ -132,20 +160,21 @@ draw_random_Ct_params <- function(role, params = default_Ct_params) {
 #'   \code{prob_elderly} (length-3 probability vector for 0/1/2 elderly).
 #'   Defaults are used for missing elements.
 #'
-#' @return Character vector of roles (e.g., \code{c("adult", "adult", "child", "toddler")}).
+#' @return Character vector of roles (e.g., \code{c("adult", "adult", "infant", "toddler")}).
 #' @keywords internal
 #' @noRd
 generate_household_roles <- function(country_profile = list()) {
   base_profile <- list(
     prob_single_parent = 0,
-    prob_siblings = c(0.40, 0.50, 0.10),
-    prob_elderly = c(0.5, 0.25, 0.25)
+    prob_siblings = c(0.10, 0.50, 0.40),
+    prob_elderly = c(0.9, 0.08, 0.02)
   )
-  profile <- modifyList(base_profile, country_profile)
+  if (is.null(country_profile)) country_profile <- list()
+  profile <- utils::modifyList(base_profile, country_profile)
 
   n_adults <- sample(1:2, 1, prob = c(profile$prob_single_parent, 1 - profile$prob_single_parent))
   roles <- rep("adult", n_adults)
-  roles <- c(roles, "child")
+  roles <- c(roles, "infant")
 
   n_siblings_plus <- sample(0:2, 1, prob = profile$prob_siblings)
   if (n_siblings_plus > 0) roles <- c(roles, rep("toddler", n_siblings_plus))
@@ -157,6 +186,68 @@ generate_household_roles <- function(country_profile = list()) {
 }
 
 
+# ==============================================================================
+# ROLE NORMALIZATION
+# ==============================================================================
+
+#' Normalize role labels to canonical set
+#'
+#' Maps common variants to canonical roles: adult, infant, toddler, elderly.
+#'
+#' @param x Character vector of role labels.
+#' @return Character vector of normalized labels.
+#' @keywords internal
+#' @noRd
+.norm_role <- function(x) {
+  x <- tolower(trimws(as.character(x)))
+  x[x == "child"]   <- "infant"
+  x[x == "baby"]    <- "infant"
+  x[x == "sibling"] <- "toddler"
+  x[x == "kid"]     <- "toddler"
+  x[x == "parent"]  <- "adult"
+  x[x == "mother"]  <- "adult"
+  x[x == "father"]  <- "adult"
+  x[x == "elder"]   <- "elderly"
+  x[x == "grandparent"] <- "elderly"
+  x
+}
+
+
+# ==============================================================================
+# PRIOR PARSING
+# ==============================================================================
+
+#' Parse prior specification to Stan format
+#'
+#' Converts user-friendly prior specification to Stan-compatible format.
+#'
+#' @param p_list List with \code{dist} and \code{params} elements.
+#' @param def_type Default prior type (1=Normal, 2=Uniform, 3=LogNormal).
+#' @param def_params Default parameter values.
+#'
+#' @return List with \code{type} (integer) and \code{params} (numeric vector).
+#' @keywords internal
+#' @noRd
+.parse_prior <- function(p_list, def_type, def_params) {
+  if (is.null(p_list)) return(list(type = def_type, params = def_params))
+
+  type_int <- 1L  # Default: Normal
+  if (!is.null(p_list$dist)) {
+    dist <- tolower(p_list$dist)
+    if (dist == "normal") type_int <- 1L
+    else if (dist == "uniform") type_int <- 2L
+    else if (dist == "lognormal") type_int <- 3L
+  }
+
+  params <- if (!is.null(p_list$params)) p_list$params else def_params
+  list(type = type_int, params = params)
+}
+
+
+# ==============================================================================
+# DEFAULT PARAMETERS
+# ==============================================================================
+
 #' Default viral load trajectory parameters by role
 #'
 #' A named list with role-specific parameters for simulating viral load
@@ -164,12 +255,12 @@ generate_household_roles <- function(country_profile = list()) {
 #' \code{t_p} (time to peak), \code{lambda_g} (growth rate),
 #' \code{lambda_d} (decay rate).
 #'
-#' @format Named list with elements \code{adult}, \code{child}, \code{toddler}, \code{elderly}.
+#' @format Named list with elements \code{adult}, \code{infant}, \code{toddler}, \code{elderly}.
 #' @keywords internal
 #' @noRd
 default_VL_params <- list(
   adult   = list(v_p = 4.14, t_p = 5.09, lambda_g = 2.31, lambda_d = 2.71),
-  child   = list(v_p = 5.84, t_p = 4.09, lambda_g = 2.82, lambda_d = 1.01),
+  infant  = list(v_p = 5.84, t_p = 4.09, lambda_g = 2.82, lambda_d = 1.01),
   toddler = list(v_p = 5.84, t_p = 4.09, lambda_g = 2.82, lambda_d = 1.01),
   elderly = list(v_p = 2.95, t_p = 5.1,  lambda_g = 3.15, lambda_d = 0.87)
 )
@@ -181,11 +272,11 @@ default_VL_params <- list(
 #' trajectories. Each role contains: \code{Cpeak} (peak Ct value),
 #' \code{r} (rise rate), \code{d} (decay rate), \code{t_peak} (time to peak).
 #'
-#' @format Named list with elements \code{adult}, \code{child}, \code{toddler}, \code{elderly}.
+#' @format Named list with elements \code{adult}, \code{infant}, \code{toddler}, \code{elderly}.
 #' @keywords internal
 #' @noRd
 default_Ct_params <- list(
-  child   = list(Cpeak = 33.3, r = 2.11, d = 1.38, t_peak = 5.06),
+  infant  = list(Cpeak = 33.3, r = 2.11, d = 1.38, t_peak = 5.06),
   toddler = list(Cpeak = 34,   r = 1.26, d = 1.27, t_peak = 4.75),
   adult   = list(Cpeak = 33,   r = 1.49, d = 1.22, t_peak = 5.14),
   elderly = list(Cpeak = 33,   r = 1.49, d = 1.22, t_peak = 5.14)
@@ -204,29 +295,81 @@ default_Ct_params <- list(
 #' @noRd
 default_household_profile <- list(
   prob_single_parent = 0,
-  prob_siblings = c(0.40, 0.50, 0.10),
+  prob_siblings = c(0.10, 0.50, 0.40),
   prob_elderly = c(0.9, 0.08, 0.02)
 )
 
 
-#' Normalize role labels to canonical set
+#' Default priors for Stan model
 #'
-#' Maps common variants to canonical roles: adult, child, toddler, elderly.
-#'
-#' @param x Character vector of role labels.
-#' @return Character vector of normalized labels.
 #' @keywords internal
 #' @noRd
-.norm_role <- function(x) {
-  x <- tolower(trimws(as.character(x)))
-  x[x == "infant"]  <- "toddler"
-  x[x == "baby"]    <- "toddler"
-  x[x == "sibling"] <- "child"
-  x[x == "kid"]     <- "child"
-  x[x == "parent"]  <- "adult"
-  x[x == "mother"]  <- "adult"
-  x[x == "father"]  <- "adult"
-  x[x == "elder"]   <- "elderly"
-  x[x == "grandparent"] <- "elderly"
-  x
+default_priors <- list(
+  beta1 = list(dist = "normal", params = c(-5, 1)),
+  beta2 = list(dist = "normal", params = c(-5, 1)),
+  alpha = list(dist = "normal", params = c(-6, 2)),
+  covariates = list(dist = "normal", params = c(0, 1)),
+  gen_shape = list(dist = "lognormal", params = c(1.5, 0.5)),
+  gen_rate = list(dist = "lognormal", params = c(0.0, 0.5)),
+  ct50 = list(dist = "normal", params = c(35.0, 3.0)),
+  slope = list(dist = "lognormal", params = c(0.4, 0.5))
+)
+
+
+# ==============================================================================
+# VIRAL DATA IMPUTATION
+# ==============================================================================
+
+#' Fill Missing Viral Data (Ct or Log10) based on Episode Start
+#'
+#' This function imputes missing viral data during confirmed episodes using
+#' theoretical trajectories defined by the parameters.
+#'
+#' @param df Dataframe containing 'person_id', 'episode_id', 'date', 'role_name', and the viral column.
+#' @param viral_col_name String. Name of the column containing viral data (e.g. "ct_value").
+#' @param type String. Either "ct_value" or "log10".
+#' @param params_list List of parameters for the curves (role-specific).
+#' @param detection_limit Numeric. Value to assign for non-infected days.
+#'
+#' @return The original dataframe with NAs in the viral column filled.
+#' @keywords internal
+#' @noRd
+fill_missing_viral_data <- function(df, viral_col_name, type = c("ct_value", "log10"),
+                                    params_list, detection_limit) {
+
+  type <- match.arg(type)
+
+  if (!viral_col_name %in% names(df)) stop(paste("Column", viral_col_name, "not found in dataframe."))
+
+  viral_sym <- rlang::sym(viral_col_name)
+
+  df_imputed <- df %>%
+    dplyr::group_by(person_id, episode_id) %>%
+    dplyr::mutate(
+      episode_start = min(date, na.rm = TRUE),
+      days_since_inf = as.numeric(date - episode_start),
+      imputed_val = dplyr::case_when(
+        !is.na(!!viral_sym) ~ as.numeric(!!viral_sym),
+        episode_id == 0     ~ detection_limit,
+        TRUE ~ {
+          role <- unique(role_name)[1]
+          if (is.na(role)) role <- "adult"
+          p <- params_list[[role]]
+          if (is.null(p)) p <- params_list[["adult"]]
+
+          if (type == "ct_value") {
+            theo <- .get_theoretical_ct(days_since_inf, p)
+            pmin(detection_limit, pmax(10, theo))
+          } else {
+            theo <- .get_theoretical_vl(days_since_inf, p)
+            pmax(detection_limit, theo)
+          }
+        }
+      )
+    ) %>%
+    dplyr::ungroup() %>%
+    dplyr::mutate(!!viral_col_name := imputed_val) %>%
+    dplyr::select(-episode_start, -days_since_inf, -imputed_val)
+
+  return(df_imputed)
 }

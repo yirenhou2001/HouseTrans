@@ -1,0 +1,8 @@
+# Makevars.win for Stan model compilation on Windows
+
+CXX_STD = CXX17
+
+PKG_CXXFLAGS = $(shell "$(R_HOME)/bin$(R_ARCH_BIN)/Rscript.exe" -e "RcppParallel::CxxFlags()") \
+               $(shell "$(R_HOME)/bin$(R_ARCH_BIN)/Rscript.exe" -e "StanHeaders:::CxxFlags()")
+PKG_LIBS = $(shell "$(R_HOME)/bin$(R_ARCH_BIN)/Rscript.exe" -e "RcppParallel::LdFlags()") \
+           $(shell "$(R_HOME)/bin$(R_ARCH_BIN)/Rscript.exe" -e "StanHeaders:::LdFlags()")

@@ -2,68 +2,70 @@
 % Please edit documentation in R/GenSyn.R
 \name{GenSyn}
 \alias{GenSyn}
-\title{GenSyn: household simulation & estimation wrapper}
+\title{Simulate Household Transmission and Estimate Parameters}
 \usage{
 GenSyn(
   n_households = 50,
-  plots = c("daily", "weekly", "timeline", "sar"),
-  print_plots = FALSE,
-  index_vl_column = "vl_test",
-  start_date = as.Date("2024-01-01"),
-  end_date = as.Date("2024-12-31"),
+  start_date = "2024-07-01",
+  end_date = "2025-06-30",
+  surveillance_df = NULL,
   seasonal_forcing_list = NULL,
-  max_days = 365,
-  alpha_comm_by_role = 0.005,
-  beta1 = 0.3,
-  beta2 = 0.05,
+  covariates_config = NULL,
+  alpha_comm_by_role = 5e-04,
+  beta1 = 0.008,
+  beta2 = 0.008,
   delta = 0,
-  phi_by_role = c(adult = 1, child = 7, toddler = 7, elderly = 4),
-  kappa_by_role = c(adult = 1, child = 1.5, toddler = 1.5, elderly = 1),
-  latent_shape = 3,
-  latent_scale = 0.5,
+  phi_by_role = c(adult = 1, infant = 4, toddler = 5, elderly = 1),
+  kappa_by_role = c(adult = 1, infant = 1, toddler = 1.2, elderly = 1),
   infectious_shape = 3,
   infectious_scale = 1,
-  resolve_shape = 1.5,
-  resolve_scale = 0.5,
+  waning_shape = 16,
+  waning_scale = 10,
   peak_day = 1,
   width = 4,
-  ptrans_threshold = 0.5,
-  detect_threshold_log10 = 1,
-  detect_threshold_Ct = 40,
-  surveillance_interval = 7,
+  detect_threshold_log10 = 1e-06,
+  detect_threshold_Ct = 99,
+  surveillance_interval = 1,
   test_daily = FALSE,
   viral_testing = "viral load",
   V_ref = 3,
   V_rho = 2.5,
   Ct_50 = 40,
   Ct_delta = 2,
-  VL_params_list = default_VL_params,
-  Ct_params_list = default_Ct_params,
-  household_profile_list = default_household_profile,
-  stan_file = "model.stan",
+  VL_params_list = NULL,
+  Ct_params_list = NULL,
+  household_profile_list = NULL,
+  max_infections = Inf,
+  use_vl_data = TRUE,
+  priors = NULL,
+  covariates_susceptibility = NULL,
+  covariates_infectivity = NULL,
+  recovery_params = NULL,
+  imputation_params = NULL,
   stan_chains = 4,
   stan_iter = 2000,
   stan_warmup = 1000,
-  stan_control = list(adapt_delta = 0.99, max_treedepth = 20),
-  stan_init = "random",
+  stan_control = list(adapt_delta = 0.95, max_treedepth = 15),
+  stan_cores = 4,
   stan_refresh = 50,
-  stan_cores = 4
+  seed = NULL
 )
 }
 \arguments{
 \item{n_households}{Integer; number of households to simulate.}
 
-\item{plots}{Character vector of plot names (\code{"daily"}, \code{"weekly"}, \code{"sar"}, \code{"timeline"}) or \code{"all"}.}
+\item{start_date, end_date}{Character or Date; study period bounds.}
 
-\item{print_plots}{Logical; print plots if \code{TRUE}.}
+\item{surveillance_df}{Optional data frame with 'date' and 'cases' columns
+for seasonal forcing. If provided, overrides \code{seasonal_forcing_list}.}
 
-\item{index_vl_column}{Character; viral-load (VL) column name for plotting (default \code{"vl_test"}).}
+\item{seasonal_forcing_list}{Optional named list with seasonal forcing vectors
+for each role (adult, infant, toddler, elderly).}
 
-\item{start_date, end_date}{\code{Date}; study window.}
-
-\item{seasonal_forcing_list}{Optional named list of role vectors; seasonal forcing.}
-
-\item{max_days}{Integer; maximum simulated days.}
+\item{covariates_config}{Optional list of covariate configurations for simulation.
+Each element should be a list with: \code{name} (column name), \code{efficacy}
+(effect size, 0-1), \code{effect_on} ("susceptibility", "infectivity", or "both"),
+and \code{coverage} (list of probabilities by role).}
 
 \item{alpha_comm_by_role}{Numeric; baseline community acquisition rate.}
 
@@ -75,19 +77,15 @@ GenSyn(
 
 \item{kappa_by_role}{Named numeric vector; infectivity multipliers by role.}
 
-\item{latent_shape, latent_scale}{Numeric; gamma parameters for latent period.}
-
 \item{infectious_shape, infectious_scale}{Numeric; gamma parameters for infectious period.}
 
-\item{resolve_shape, resolve_scale}{Numeric; gamma parameters for resolution period.}
+\item{waning_shape, waning_scale}{Numeric; gamma parameters for immunity waning period.}
 
 \item{peak_day, width}{Numeric; infectivity profile parameters.}
 
-\item{ptrans_threshold}{Numeric; transmission potential threshold.}
+\item{detect_threshold_log10}{Numeric; viral load detection threshold (log10).}
 
-\item{detect_threshold_log10}{Numeric; VL detection threshold in log10.}
-
-\item{detect_threshold_Ct}{Numeric; Ct detection threshold.}
+\item{detect_threshold_Ct}{Numeric; Ct value detection threshold.}
 
 \item{surveillance_interval}{Integer; days between scheduled tests.}
 
@@ -95,49 +93,81 @@ GenSyn(
 
 \item{viral_testing}{Character; \code{"viral load"} or \code{"Ct"}.}
 
-\item{V_ref, V_rho}{Numeric; viral load reference and power.}
+\item{V_ref, V_rho}{Numeric; viral load reference and power for transmission.}
 
 \item{Ct_50, Ct_delta}{Numeric; Ct-based infectivity parameters.}
 
-\item{VL_params_list}{Named list; role-specific VL trajectory parameters.}
+\item{VL_params_list}{Named list; role-specific viral load trajectory parameters.}
 
 \item{Ct_params_list}{Named list; role-specific Ct trajectory parameters.}
 
 \item{household_profile_list}{Named list; household composition probabilities.}
 
-\item{stan_file}{Path to a Stan model file.}
+\item{max_infections}{Integer; maximum infections per person (for reinfection modeling).}
+
+\item{use_vl_data}{Logical; whether to use viral load data in estimation.}
+
+\item{priors}{Named list; prior specifications for Stan model. Each element
+should be a list with \code{dist} ("normal", "uniform", "lognormal") and
+\code{params} (parameter vector). Available priors: beta1, beta2, alpha,
+covariates, gen_shape, gen_rate, ct50, slope.}
+
+\item{covariates_susceptibility}{Character vector; names of susceptibility covariates.}
+
+\item{covariates_infectivity}{Character vector; names of infectivity covariates.}
+
+\item{recovery_params}{Named list; Gamma parameters (shape, scale) for immunity
+tail duration by role.}
+
+\item{imputation_params}{Named list; parameters for viral curve imputation by role.}
 
 \item{stan_chains, stan_iter, stan_warmup}{Integers; Stan sampling controls.}
 
-\item{stan_control}{List; Stan \code{control} list.}
+\item{stan_control}{List; Stan control parameters.}
 
-\item{stan_init}{Character or function; Stan initialization.}
+\item{stan_cores}{Integer; number of CPU cores for Stan.}
 
-\item{stan_refresh}{Integer; Stan refresh rate.}
+\item{stan_refresh}{Integer; refresh rate for Stan output.}
 
-\item{stan_cores}{Integer; CPU cores for Stan.}
+\item{seed}{Integer; random seed for reproducibility.}
 }
 \value{
-A \code{"GenSynResult"} list with elements: \code{$call},
-\code{$n_households}, \code{$results}, \code{$postprocessing}, \code{$plot_list}.
+An object of class \code{"GenSynResult"} containing:
+\describe{
+\item{$call}{The matched call}
+\item{$n_households}{Number of households simulated}
+\item{$simulation}{Raw simulation output with hh_df and diagnostic_df}
+\item{$stan_data}{Data prepared for Stan}
+\item{$fit}{The stanfit object}
+\item{$postprocessing}{Tidy posterior summary}
+\item{$attack_rates}{Attack rate and reinfection summaries}
+\item{$transmission_chains}{Reconstructed transmission links}
+}
 }
 \description{
-Runs \code{\link{main_parameter_estimation_pipeline}()} to simulate
-household data, fit via Bayesian Stan, and assemble a \code{"GenSynResult"}.
+Simulates household infection dynamics with viral load trajectories,
+reinfections, and covariate effects, then estimates transmission
+parameters using Bayesian inference via Stan.
 }
 \examples{
 \dontrun{
-# Simulate and estimate
-seasonal_forcing_list <- list(
-  adult=rep(0.1,365), child=rep(0.1,365), elderly=rep(0.1,365), toddler=rep(0.1,365)
+# Basic simulation
+result <- GenSyn(
+  n_households = 50,
+  start_date = "2024-07-01",
+  end_date = "2025-06-30",
+  stan_chains = 2,
+  stan_iter = 1000,
+  stan_warmup = 500,
+  seed = 123
 )
-fit <- GenSyn(
-  n_households=50,
-  seasonal_forcing_list=seasonal_forcing_list, max_days=365,
-  stan_chains=4, stan_iter=2000, stan_warmup=1000, stan_cores=4
-)
+
+# View results
+print(result)
+plot(result, which = "posterior")
 }
+
 }
 \seealso{
-\code{\link{main_parameter_estimation_pipeline}}, \code{\link{TransmissionChainAnalysis}}
+\code{\link{TransmissionChainAnalysis}}, \code{\link{plot.GenSynResult}}
 }

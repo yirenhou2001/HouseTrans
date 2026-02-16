@@ -1,0 +1,6 @@
+#!/bin/sh
+
+# Configure script for Windows Stan model compilation
+# This script is called during package installation on Windows
+
+"${R_HOME}/bin${R_ARCH_BIN}/Rscript.exe" -e "rstantools::rstan_config()"
