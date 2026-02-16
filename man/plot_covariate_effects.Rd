@@ -18,4 +18,11 @@ A ggplot object.
 Creates a forest plot showing the effects of covariates on susceptibility
 and infectivity.
 }
-\keyword{internal}
+\examples{
+\dontrun{
+# fit <- run_household_stan(stan_data = stan_input, ...)
+# stan_input should include K_susc / K_inf and match the fitted model
+p_beta <- plot_covariate_effects(fit, stan_input)
+print(p_beta)
+}
+}

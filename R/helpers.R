@@ -155,34 +155,53 @@ draw_random_Ct_params <- function(role, params = default_Ct_params) {
 #' Samples household composition (adults, infants, toddlers, elderly) based
 #' on probability parameters in a country/region profile.
 #'
-#' @param country_profile Named list with \code{prob_single_parent} (numeric),
-#'   \code{prob_siblings} (length-3 probability vector for 0/1/2 additional children),
-#'   \code{prob_elderly} (length-3 probability vector for 0/1/2 elderly).
+#' @param country_profile Named list with:
+#'   \describe{
+#'     \item{prob_adults}{Length-3 probability vector for 0/1/2 adults (default: c(0, 0, 1) = always 2 adults)}
+#'     \item{prob_infant}{Probability of having an infant, 0-1 (default: 1.0 = always 1 infant)}
+#'     \item{prob_siblings}{Length-3 probability vector for 0/1/2 toddlers/siblings (default: c(0.1, 0.7, 0.2))}
+#'     \item{prob_elderly}{Length-3 probability vector for 0/1/2 elderly (default: c(0.7, 0.15, 0.15))}
+#'   }
 #'   Defaults are used for missing elements.
 #'
 #' @return Character vector of roles (e.g., \code{c("adult", "adult", "infant", "toddler")}).
 #' @keywords internal
 #' @noRd
 generate_household_roles <- function(country_profile = list()) {
+  # Default Profile
+  # prob_adults: Default is 0% chance of 0, 0% chance of 1, 100% chance of 2
+  # prob_infant: Default is 100% chance of 1
   base_profile <- list(
-    prob_single_parent = 0,
-    prob_siblings = c(0.10, 0.50, 0.40),
-    prob_elderly = c(0.9, 0.08, 0.02)
+    prob_adults   = c(0.0, 0, 1),
+    prob_infant   = 1.0,
+    prob_siblings = c(0.1, 0.7, 0.2),
+    prob_elderly  = c(0.7, 0.15, 0.15)
   )
+
   if (is.null(country_profile)) country_profile <- list()
+
+  # Merge lists safely (prefer user input over base)
   profile <- utils::modifyList(base_profile, country_profile)
 
-  n_adults <- sample(1:2, 1, prob = c(profile$prob_single_parent, 1 - profile$prob_single_parent))
-  roles <- rep("adult", n_adults)
-  roles <- c(roles, "infant")
+  roles <- c()
 
-  n_siblings_plus <- sample(0:2, 1, prob = profile$prob_siblings)
-  if (n_siblings_plus > 0) roles <- c(roles, rep("toddler", n_siblings_plus))
+  # 1. Add Adults (0, 1, or 2)
+  n_adults <- sample(0:2, 1, prob = profile$prob_adults)
+  if (n_adults > 0) roles <- c(roles, rep("adult", n_adults))
 
-  n_grandparents <- sample(0:2, 1, prob = profile$prob_elderly)
-  if (n_grandparents > 0) roles <- c(roles, rep("elderly", n_grandparents))
+  # 2. Add Infant (0 or 1) - Controlled by prob_infant
+  has_infant <- stats::rbinom(1, 1, profile$prob_infant)
+  if (has_infant == 1) roles <- c(roles, "infant")
 
-  return(sample(roles))
+  # 3. Add Toddlers (Siblings)
+  n_toddlers <- sample(0:2, 1, prob = profile$prob_siblings)
+  if (n_toddlers > 0) roles <- c(roles, rep("toddler", n_toddlers))
+
+  # 4. Add Elderly
+  n_elderly <- sample(0:2, 1, prob = profile$prob_elderly)
+  if (n_elderly > 0) roles <- c(roles, rep("elderly", n_elderly))
+
+  return(roles)
 }
 
 
@@ -286,17 +305,21 @@ default_Ct_params <- list(
 #' Default household composition profile
 #'
 #' A named list specifying probabilities for household composition:
-#' \code{prob_single_parent} (probability of single-parent household),
-#' \code{prob_siblings} (probabilities for 0, 1, 2 additional siblings/toddlers),
-#' \code{prob_elderly} (probabilities for 0, 1, 2 elderly members).
+#' \describe{
+#'   \item{prob_adults}{Length-3 probability vector for 0/1/2 adults}
+#'   \item{prob_infant}{Probability (0-1) of having an infant}
+#'   \item{prob_siblings}{Length-3 probability vector for 0/1/2 toddlers}
+#'   \item{prob_elderly}{Length-3 probability vector for 0/1/2 elderly}
+#' }
 #'
 #' @format Named list with probability vectors.
 #' @keywords internal
 #' @noRd
 default_household_profile <- list(
-  prob_single_parent = 0,
-  prob_siblings = c(0.10, 0.50, 0.40),
-  prob_elderly = c(0.9, 0.08, 0.02)
+  prob_adults   = c(0.0, 0.0, 1.0),
+  prob_infant   = 1.0,
+  prob_siblings = c(0.10, 0.70, 0.20),
+  prob_elderly  = c(0.70, 0.15, 0.15)
 )
 
 

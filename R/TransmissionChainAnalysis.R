@@ -46,7 +46,6 @@
 #'   \item{$postprocessing}{Tidy posterior summary}
 #'   \item{$transmission_chains}{Reconstructed transmission links}
 #' }
-#'
 #' @examples
 #' \dontrun{
 #' # Per-person episode format
@@ -72,7 +71,6 @@
 #' print(result)
 #' plot(result, which = "posterior")
 #' }
-#'
 #' @seealso \code{\link{GenSyn}}, \code{\link{plot.TransmissionChainResult}}
 #' @export
 TransmissionChainAnalysis <- function(

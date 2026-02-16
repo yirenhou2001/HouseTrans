@@ -13,7 +13,13 @@ NULL
 #' @param fit A \code{stanfit} object.
 #'
 #' @return A combined ggplot object.
-#' @keywords internal
+#' @examples
+#' \dontrun{
+#' # fit <- run_household_stan(stan_data = stan_input, ...)
+#' p_post <- plot_posterior_distributions(fit)
+#' print(p_post)
+#' }
+#' @export
 plot_posterior_distributions <- function(fit) {
   post <- rstan::extract(fit)
 
@@ -81,7 +87,14 @@ plot_posterior_distributions <- function(fit) {
 #' @param stan_data The list data passed to Stan.
 #'
 #' @return A ggplot object.
-#' @keywords internal
+#' @examples
+#' \dontrun{
+#' # fit <- run_household_stan(stan_data = stan_input, ...)
+#' # stan_input should include K_susc / K_inf and match the fitted model
+#' p_beta <- plot_covariate_effects(fit, stan_input)
+#' print(p_beta)
+#' }
+#' @export
 plot_covariate_effects <- function(fit, stan_data) {
   post <- rstan::extract(fit)
 
@@ -135,165 +148,6 @@ plot_covariate_effects <- function(fit, stan_data) {
     ggplot2::scale_color_brewer(palette = "Set1")
 }
 
-
-#' Reconstruct Transmission Chains (Covariate-Aware)
-#'
-#' Identifies potential infectors for each infection event based on posterior
-#' estimates, accounting for covariates if present.
-#'
-#' @param fit A stanfit object.
-#' @param stan_data The list data passed to Stan.
-#' @param min_prob_threshold Minimum probability threshold for links.
-#'
-#' @return A data frame of transmission links with probabilities.
-#' @keywords internal
-reconstruct_transmission_chains <- function(fit, stan_data, min_prob_threshold = 0.01) {
-
-  # 1. Extract Posterior Medians
-  post <- rstan::extract(fit)
-  p_beta1 <- stats::median(post$beta1)
-  p_beta2 <- stats::median(post$beta2)
-  p_alpha <- mean(post$alpha_comm)
-
-  p_gen_shape <- stats::median(post$gen_shape)
-  p_gen_rate  <- stats::median(post$gen_rate)
-  p_ct50      <- stats::median(post$Ct50)
-  p_slope     <- stats::median(post$slope_ct)
-
-  p_phi   <- apply(post$phi_by_role, 2, stats::median)
-  p_kappa <- apply(post$kappa_by_role, 2, stats::median)
-
-  # Extract Covariate Coefficients
-  p_beta_susc <- if (!is.null(post$beta_susc)) apply(as.matrix(post$beta_susc), 2, stats::median) else numeric(0)
-  p_beta_inf  <- if (!is.null(post$beta_inf))  apply(as.matrix(post$beta_inf), 2, stats::median) else numeric(0)
-
-  # 2. Setup Data
-  N <- stan_data$N
-  T_max <- stan_data$T
-  I <- stan_data$I
-  Y <- stan_data$Y
-  V <- stan_data$V
-
-  X_susc <- if (stan_data$K_susc > 0) stan_data$X_susc else matrix(0, nrow = N, ncol = 0)
-  X_inf  <- if (stan_data$K_inf > 0)  stan_data$X_inf  else matrix(0, nrow = N, ncol = 0)
-
-  infection_day <- rep(0, N)
-  for (n in 1:N) {
-    idx <- which(I[n, ] == 1)
-    if (length(idx) > 0) infection_day[n] <- idx[1]
-  }
-
-  # Pre-calculate Gamma Curve
-  g_curve <- numeric(T_max)
-  for (d in 1:T_max) {
-    g_curve[d] <- stats::dgamma(d, shape = p_gen_shape, rate = p_gen_rate)
-  }
-  g_curve <- g_curve / max(g_curve)
-
-  # 3. Iterate through Infections
-  results_list <- list()
-  infected_episodes <- which(infection_day > 0)
-
-  for (target_idx in infected_episodes) {
-
-    t_inf <- infection_day[target_idx]
-    hh    <- stan_data$hh_id[target_idx]
-    role_t <- stan_data$role_id[target_idx]
-
-    # Calculate Target Susceptibility (Phi * Covariates)
-    log_susc_mod <- 0
-    if (length(p_beta_susc) > 0) {
-      log_susc_mod <- sum(X_susc[target_idx, ] * p_beta_susc)
-    }
-    phi_eff <- p_phi[role_t] * exp(log_susc_mod)
-
-    # Community Hazard
-    season_val <- stan_data$seasonal_forcing_mat[t_inf, role_t]
-    lambda_comm <- phi_eff * p_alpha * season_val
-
-    # Household Hazards
-    hh_members <- which(stan_data$hh_id == hh)
-    source_probs <- numeric(length(hh_members))
-    source_ids   <- integer(length(hh_members))
-
-    for (k in seq_along(hh_members)) {
-      source_idx <- hh_members[k]
-      source_ids[k] <- source_idx
-
-      if (source_idx == target_idx) next
-      if (stan_data$p_id[source_idx] == stan_data$p_id[target_idx]) next
-      if (Y[source_idx, t_inf] == 0) next
-
-      src_inf_day <- infection_day[source_idx]
-      if (src_inf_day == 0 || src_inf_day > t_inf) next
-
-      dt <- t_inf - src_inf_day + 1
-      if (dt > T_max || dt < 1) next
-
-      val_g <- g_curve[dt]
-      val_v <- 0
-      if (stan_data$use_vl_data == 1) {
-        raw_v <- V[source_idx, t_inf]
-        if (stan_data$vl_type == 1) {
-          val_v <- (max(0, raw_v) / p_ct50)^p_slope
-        } else {
-          exponent <- -(raw_v - p_ct50) * p_slope
-          val_v <- 1 / (1 + exp(-exponent))
-        }
-      }
-
-      term_combined <- 0
-      if (stan_data$use_vl_data == 0) {
-        term_combined <- p_beta1 + (p_beta2 * val_g)
-      } else {
-        term_combined <- (p_beta1 * val_g) + (p_beta2 * val_v)
-      }
-
-      # Calculate Source Infectivity (Kappa * Covariates)
-      log_inf_mod <- 0
-      if (length(p_beta_inf) > 0) {
-        log_inf_mod <- sum(X_inf[source_idx, ] * p_beta_inf)
-      }
-      kappa_eff <- p_kappa[stan_data$role_id[source_idx]] * exp(log_inf_mod)
-
-      scaling <- (1 / max(stan_data$hh_size_people[hh], 1))^stan_data$delta
-      h_source <- scaling * kappa_eff * term_combined
-
-      lambda_source <- phi_eff * h_source
-      source_probs[k] <- lambda_source
-    }
-
-    # 4. Save Probabilities
-    total_hazard <- lambda_comm + sum(source_probs)
-
-    if (total_hazard > 0) {
-      # A. Community Link
-      prob_comm <- lambda_comm / total_hazard
-      if (prob_comm >= min_prob_threshold) {
-        results_list[[length(results_list) + 1]] <- data.frame(
-          target = target_idx, hh_id = hh, day = t_inf,
-          source = "Community", prob = prob_comm, stringsAsFactors = FALSE
-        )
-      }
-
-      # B. Household Links
-      prob_hh_vec <- source_probs / total_hazard
-      for (k in seq_along(prob_hh_vec)) {
-        if (prob_hh_vec[k] >= min_prob_threshold) {
-          results_list[[length(results_list) + 1]] <- data.frame(
-            target = target_idx, hh_id = hh, day = t_inf,
-            source = as.character(source_ids[k]),
-            prob = prob_hh_vec[k], stringsAsFactors = FALSE
-          )
-        }
-      }
-    }
-  }
-
-  if (length(results_list) > 0) do.call(rbind, results_list) else data.frame()
-}
-
-
 #' Plot Household Timeline with Transmission Chains
 #'
 #' Creates a timeline visualization of infections within a household,
@@ -307,7 +161,24 @@ reconstruct_transmission_chains <- function(fit, stan_data, min_prob_threshold =
 #' @param plot_width,plot_height Numeric; plot dimensions.
 #'
 #' @return A ggplot object.
-#' @keywords internal
+#' @examples
+#' \dontrun{
+#' # After fitting the Stan model and post-processing (object names may vary):
+#' # fit       <- run_household_stan(stan_data = stan_input, ...)
+#' # chains    <- postprocess_stan_fit(fit, stan_input)
+#' # trans_df  <- chains$trans_df   # must include: hh_id, source, target, prob
+#'
+#' # Plot a specific household (e.g., HH #2)
+#' p_hh <- plot_household_timeline(
+#'   trans_df,
+#'   stan_input,
+#'   target_hh_id = 2,
+#'   start_date_str = "2024-10-08",
+#'   prob_cutoff = 0.10
+#' )
+#' print(p_hh)
+#' }
+#' @export
 plot_household_timeline <- function(trans_df, stan_data, target_hh_id,
                                     start_date_str = "2024-10-08",
                                     prob_cutoff = 0,
@@ -552,6 +423,332 @@ plot_household_timeline <- function(trans_df, stan_data, target_hh_id,
   return(p)
 }
 
+
+#' Plot Dual-Axis Epidemic Curve (Binned)
+#'
+#' Overlays a stacked bar chart of simulated infections with a line chart of
+#' surveillance data. Both datasets are aggregated by 'bin_width' days.
+#'
+#' @param sim_result Output object from \code{simulate_multiple_households_comm}.
+#' @param surveillance_df Dataframe with \code{date} and \code{cases} columns.
+#' @param start_date_str Character; start date of the simulation.
+#' @param bin_width Integer; aggregation window in days (default 7).
+#'
+#' @return A ggplot object.
+#' @examples
+#' \dontrun{
+#' # sim_result should be a simulation output containing sim_result$hh_df
+#' # with at least: infection_time, role
+#' # surveillance_df must include: date, cases
+#'
+#' p_epi <- plot_epidemic_curve(
+#'   sim_result,
+#'   surveillance_df,
+#'   start_date_str = "2024-07-01",
+#'   bin_width = 7
+#' )
+#' print(p_epi)
+#' }
+#' @export
+plot_epidemic_curve <- function(sim_result, surveillance_df, start_date_str = "2024-07-01", bin_width = 7) {
+
+  start_date <- as.Date(start_date_str)
+
+  # --- 1. PREPARE SIMULATION DATA (BINNED) ---
+  df_sim_raw <- sim_result$hh_df %>%
+    dplyr::filter(!is.na(infection_time))
+
+  if (nrow(df_sim_raw) == 0) return(NULL)
+
+  df_sim_binned <- df_sim_raw %>%
+    dplyr::mutate(
+      day_idx = infection_time - 1,
+      bin_start_idx = floor(day_idx / bin_width) * bin_width,
+      date_formatted = start_date + bin_start_idx,
+      role_group = dplyr::case_when(
+        role == "infant" ~ "Infant",
+        role == "toddler" ~ "Toddler",
+        role == "adult" ~ "Adult",
+        role == "elderly" ~ "Elderly",
+        TRUE ~ "Other"
+      ),
+      role_group = factor(role_group, levels = c("Infant", "Toddler", "Adult", "Elderly"))
+    ) %>%
+    dplyr::count(date_formatted, role_group, name = "n_infections")
+
+  # --- 2. PREPARE SURVEILLANCE DATA (BINNED) ---
+  surv_binned <- surveillance_df %>%
+    dplyr::mutate(date = as.Date(date)) %>%
+    dplyr::filter(date >= start_date) %>%
+    dplyr::mutate(
+      day_idx = as.numeric(date - start_date),
+      valid = day_idx >= 0
+    ) %>%
+    dplyr::filter(valid) %>%
+    dplyr::mutate(
+      bin_start_idx = floor(day_idx / bin_width) * bin_width,
+      date_bin = start_date + bin_start_idx
+    ) %>%
+    dplyr::group_by(date_bin) %>%
+    dplyr::summarise(cases = sum(cases, na.rm = TRUE), .groups = "drop")
+
+  # Trim surveillance to simulation range
+  max_sim_date <- max(df_sim_binned$date_formatted)
+  surv_binned <- surv_binned %>% dplyr::filter(date_bin <= max_sim_date + bin_width)
+
+  # --- 3. CALCULATE SCALING ---
+  max_bar_val <- df_sim_binned %>%
+    dplyr::group_by(date_formatted) %>%
+    dplyr::summarise(total = sum(n_infections), .groups = "drop") %>%
+    dplyr::pull(total) %>%
+    max(na.rm = TRUE)
+
+  if (is.infinite(max_bar_val) || max_bar_val == 0) max_bar_val <- 1
+
+  max_line_val <- if (nrow(surv_binned) > 0) max(surv_binned$cases, na.rm = TRUE) else 1
+  coeff <- max_line_val / max_bar_val
+  coeff <- coeff * 1.1
+
+  # --- 4. PLOT ---
+  custom_colors <- c(
+    "Adult"   = "#00A1D5FF",
+    "Infant"  = "#79AF97FF",
+    "Toddler" = "#DF8F44FF",
+    "Elderly" = "#B24745FF"
+  )
+
+  ggplot2::ggplot() +
+    ggplot2::geom_line(
+      data = surv_binned,
+      ggplot2::aes(x = date_bin, y = cases / coeff, color = "Surveillance"),
+      linewidth = 1, alpha = 1
+    ) +
+    ggplot2::geom_bar(
+      data = df_sim_binned,
+      ggplot2::aes(x = date_formatted, y = n_infections, fill = role_group),
+      stat = "identity",
+      width = bin_width - 0.5,
+      color = "transparent",
+      alpha = 0.6
+    ) +
+    ggplot2::scale_fill_manual(values = custom_colors) +
+    ggplot2::scale_color_manual(name = "", values = c("Surveillance" = "black")) +
+    ggplot2::scale_y_continuous(
+      name = "# of Positive Samples",
+      breaks = scales::pretty_breaks(n = 6),
+      sec.axis = ggplot2::sec_axis(~ . * coeff, name = "Surveillance Cases")
+    ) +
+    ggplot2::scale_x_date(date_labels = "%b %d", date_breaks = "4 weeks") +
+    ggplot2::labs(x = "Date", fill = "Age Group") +
+    ggplot2::theme_bw(base_size = 16) +
+    ggplot2::theme(
+      panel.border = ggplot2::element_rect(color = "black", fill = NA, linewidth = 1.2),
+      axis.ticks = ggplot2::element_line(linewidth = 1),
+      axis.text.x = ggplot2::element_text(angle = 0, color = "black", size = 18),
+      axis.text.y = ggplot2::element_text(color = "black", size = 18),
+      axis.title.y.left = ggplot2::element_text(face = "bold", margin = ggplot2::margin(r = 10), size = 18),
+      axis.title.y.right = ggplot2::element_text(face = "bold", angle = 90, margin = ggplot2::margin(l = 10), size = 18),
+      axis.title.x = ggplot2::element_text(face = "bold", angle = 0, size = 18),
+      panel.grid.major = ggplot2::element_blank(),
+      legend.position = "top"
+    )
+}
+
+
+#' Plot Epidemic Curve for User Data
+#'
+#' Creates an epidemic curve from user-provided data, optionally overlaying
+#' surveillance data if available.
+#'
+#' @param user_data Dataframe with user's infection data.
+#' @param start_date Date; study start date.
+#' @param surveillance_df Optional dataframe with \code{date} and \code{cases} columns.
+#' @param bin_width Integer; aggregation window in days (default 7).
+#'
+#' @return A ggplot object.
+#' @examples
+#' \dontrun{
+#' # user_data can be in per-person format (recommended for this example),
+#' # with at least: infection_time, role (and optionally HH, individual_ID, etc.)
+#'
+#' p_user <- plot_user_epidemic_curve(
+#'   user_data,
+#'   start_date = "2024-10-08",
+#'   bin_width = 7
+#' )
+#' print(p_user)
+#'
+#' # Optional: overlay surveillance (must include: date, cases)
+#' p_user2 <- plot_user_epidemic_curve(
+#'   user_data,
+#'   start_date = "2024-10-08",
+#'   surveillance_df = surveillance_df,
+#'   bin_width = 7
+#' )
+#' print(p_user2)
+#' }
+#' @export
+plot_user_epidemic_curve <- function(user_data, start_date, surveillance_df = NULL, bin_width = 7) {
+
+  start_date <- as.Date(start_date)
+
+  # --- 1. DETERMINE DATA FORMAT AND EXTRACT INFECTIONS ---
+  # Check if per-person format or long format
+  if ("infection_time" %in% names(user_data)) {
+    # Per-person episode format
+    df_infections <- user_data %>%
+      dplyr::filter(!is.na(infection_time)) %>%
+      dplyr::mutate(
+        day_idx = as.numeric(infection_time) - 1,
+        role = .norm_role(role)
+      )
+  } else if ("test_date" %in% names(user_data) && "infection_status" %in% names(user_data))
+  {
+    # Long format - get first positive per person per episode
+    df_infections <- user_data %>%
+      dplyr::filter(infection_status == 1) %>%
+      dplyr::group_by(HH, individual_ID) %>%
+      dplyr::slice_min(test_date, n = 1, with_ties = FALSE) %>%
+      dplyr::ungroup() %>%
+      dplyr::mutate(
+        day_idx = if (inherits(test_date, "Date")) {
+          as.numeric(test_date - start_date)
+        } else {
+          as.numeric(test_date) - 1
+        },
+        role = .norm_role(role)
+      )
+  } else {
+    return(.empty_plot("Cannot determine infection timing from data"))
+  }
+
+  if (nrow(df_infections) == 0) {
+    return(.empty_plot("No infections found in data"))
+  }
+
+  # --- 2. BIN THE DATA ---
+  df_binned <- df_infections %>%
+    dplyr::mutate(
+      bin_start_idx = floor(day_idx / bin_width) * bin_width,
+      date_formatted = start_date + bin_start_idx,
+      role_group = dplyr::case_when(
+        role == "infant" ~ "Infant",
+        role == "toddler" ~ "Toddler",
+        role == "adult" ~ "Adult",
+        role == "elderly" ~ "Elderly",
+        TRUE ~ "Other"
+      ),
+      role_group = factor(role_group, levels = c("Infant", "Toddler", "Adult", "Elderly", "Other"))
+    ) %>%
+    dplyr::count(date_formatted, role_group, name = "n_infections")
+
+  # --- 3. PREPARE SURVEILLANCE DATA IF PROVIDED ---
+  has_surveillance <- !is.null(surveillance_df) && nrow(surveillance_df) > 0
+
+  if (has_surveillance) {
+    surv_binned <- surveillance_df %>%
+      dplyr::mutate(date = as.Date(date)) %>%
+      dplyr::filter(date >= start_date) %>%
+      dplyr::mutate(
+        day_idx = as.numeric(date - start_date),
+        valid = day_idx >= 0
+      ) %>%
+      dplyr::filter(valid) %>%
+      dplyr::mutate(
+        bin_start_idx = floor(day_idx / bin_width) * bin_width,
+        date_bin = start_date + bin_start_idx
+      ) %>%
+      dplyr::group_by(date_bin) %>%
+      dplyr::summarise(cases = sum(cases, na.rm = TRUE), .groups = "drop")
+
+    # Trim to data range
+    max_data_date <- max(df_binned$date_formatted)
+    min_data_date <- min(df_binned$date_formatted)
+    surv_binned <- surv_binned %>%
+      dplyr::filter(date_bin >= min_data_date - bin_width, date_bin <= max_data_date + bin_width)
+  }
+
+  # --- 4. CALCULATE SCALING ---
+  max_bar_val <- df_binned %>%
+    dplyr::group_by(date_formatted) %>%
+    dplyr::summarise(total = sum(n_infections), .groups = "drop") %>%
+    dplyr::pull(total) %>%
+    max(na.rm = TRUE)
+
+  if (is.infinite(max_bar_val) || max_bar_val == 0) max_bar_val <- 1
+
+  if (has_surveillance && nrow(surv_binned) > 0) {
+    max_line_val <- max(surv_binned$cases, na.rm = TRUE)
+    coeff <- max_line_val / max_bar_val * 1.1
+  } else {
+    coeff <- 1
+  }
+
+  # --- 5. PLOT ---
+  custom_colors <- c(
+    "Adult"   = "#00A1D5FF",
+    "Infant"  = "#79AF97FF",
+    "Toddler" = "#DF8F44FF",
+    "Elderly" = "#B24745FF",
+    "Other"   = "#999999"
+  )
+
+  p <- ggplot2::ggplot() +
+    ggplot2::geom_bar(
+      data = df_binned,
+      ggplot2::aes(x = date_formatted, y = n_infections, fill = role_group),
+      stat = "identity",
+      width = bin_width - 0.5,
+      color = "transparent",
+      alpha = 0.7
+    ) +
+    ggplot2::scale_fill_manual(values = custom_colors)
+
+  # Add surveillance overlay if available
+  if (has_surveillance && nrow(surv_binned) > 0) {
+    p <- p +
+      ggplot2::geom_line(
+        data = surv_binned,
+        ggplot2::aes(x = date_bin, y = cases / coeff, color = "Surveillance"),
+        linewidth = 1, alpha = 1
+      ) +
+      ggplot2::scale_color_manual(name = "", values = c("Surveillance" = "black")) +
+      ggplot2::scale_y_continuous(
+        name = "# of Infections",
+        breaks = scales::pretty_breaks(n = 6),
+        sec.axis = ggplot2::sec_axis(~ . * coeff, name = "Surveillance Cases")
+      )
+  } else {
+    p <- p +
+      ggplot2::scale_y_continuous(
+        name = "# of Infections",
+        breaks = scales::pretty_breaks(n = 6)
+      )
+  }
+
+  p <- p +
+    ggplot2::scale_x_date(date_labels = "%b %d", date_breaks = "4 weeks") +
+    ggplot2::labs(
+      title = "Epidemic Curve (User Data)",
+      x = "Date",
+      fill = "Age Group"
+    ) +
+    ggplot2::theme_bw(base_size = 16) +
+    ggplot2::theme(
+      panel.border = ggplot2::element_rect(color = "black", fill = NA, linewidth = 1.2),
+      axis.ticks = ggplot2::element_line(linewidth = 1),
+      axis.text.x = ggplot2::element_text(angle = 0, color = "black", size = 14),
+      axis.text.y = ggplot2::element_text(color = "black", size = 14),
+      axis.title.y.left = ggplot2::element_text(face = "bold", margin = ggplot2::margin(r = 10), size = 14),
+      axis.title.y.right = ggplot2::element_text(face = "bold", angle = 90, margin = ggplot2::margin(l = 10), size = 14),
+      axis.title.x = ggplot2::element_text(face = "bold", angle = 0, size = 14),
+      plot.title = ggplot2::element_text(face = "bold", size = 16),
+      panel.grid.major = ggplot2::element_blank(),
+      legend.position = "top"
+    )
+
+  return(p)
+}
 
 #' Create Empty Plot with Error Message
 #'

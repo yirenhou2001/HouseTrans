@@ -60,7 +60,6 @@
 #'   \item{$attack_rates}{Attack rate and reinfection summaries}
 #'   \item{$transmission_chains}{Reconstructed transmission links}
 #' }
-#'
 #' @examples
 #' \dontrun{
 #' # Basic simulation
@@ -78,7 +77,6 @@
 #' print(result)
 #' plot(result, which = "posterior")
 #' }
-#'
 #' @seealso \code{\link{TransmissionChainAnalysis}}, \code{\link{plot.GenSynResult}}
 #' @export
 GenSyn <- function(

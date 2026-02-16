@@ -118,7 +118,6 @@ result <- TransmissionChainAnalysis(
 print(result)
 plot(result, which = "posterior")
 }
-
 }
 \seealso{
 \code{\link{GenSyn}}, \code{\link{plot.TransmissionChainResult}}

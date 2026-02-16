@@ -16,4 +16,10 @@ A combined ggplot object.
 Creates violin plots of posterior distributions for susceptibility and
 infectivity parameters by role.
 }
-\keyword{internal}
+\examples{
+\dontrun{
+# fit <- run_household_stan(stan_data = stan_input, ...)
+p_post <- plot_posterior_distributions(fit)
+print(p_post)
+}
+}

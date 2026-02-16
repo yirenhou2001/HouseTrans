@@ -102,4 +102,28 @@ List with hh_df and diagnostic_df.
 Simulates household infection dynamics across multiple households with
 support for generic covariates, reinfections, and viral load trajectories.
 }
-\keyword{internal}
+\examples{
+\dontrun{
+household_profile <- list(
+  prob_adults   = c(0, 0, 1),
+  prob_infant   = 1.0,
+  prob_siblings = c(0, .8, .2),
+  prob_elderly  = c(0.7, 0.1, 0.2)
+)
+
+sim_res <- simulate_multiple_households_comm(
+  n_households = 100,
+  viral_testing = "viral load",
+  infectious_shape = 10,
+  infectious_scale = 1,
+  waning_shape = 6,
+  waning_scale = 10,
+  surveillance_interval = 4,
+  start_date = “2024-07-01”,
+  end_date = “2025-06-30”,
+  surveillance_df = surveillance_data,
+  seed = 123,
+  household_profile_list = household_profile
+)
+}
+}

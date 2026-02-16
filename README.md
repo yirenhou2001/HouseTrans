@@ -217,6 +217,32 @@ result <- TransmissionChainAnalysis(
 )
 ```
 
+### Household Profile Configuration
+
+Customize household composition probabilities:
+
+```r
+household_profile <- list(
+  prob_adults   = c(0, 0, 1),      # Probability of 0/1/2 adults (default: always 2)
+  prob_infant   = 1.0,             # Probability of having an infant (default: always 1)
+  prob_siblings = c(0, 0.8, 0.2),  # Probability of 0/1/2 toddlers/siblings
+  prob_elderly  = c(0.7, 0.1, 0.2) # Probability of 0/1/2 elderly
+)
+
+result <- GenSyn(
+  n_households = 100,
+  household_profile_list = household_profile
+)
+```
+
+**Role naming:**
+| Profile Parameter | Concept | Role Generated |
+|------------------|---------|----------------|
+| `prob_adults` | Parents | `"adult"` |
+| `prob_infant` | Baby/index child | `"infant"` |
+| `prob_siblings` | Older siblings | `"toddler"` |
+| `prob_elderly` | Grandparents | `"elderly"` |
+
 ### Viral Curve Imputation Parameters
 
 Customize mechanistic viral curve imputation:

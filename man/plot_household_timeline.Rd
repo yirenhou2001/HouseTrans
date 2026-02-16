@@ -34,4 +34,21 @@ A ggplot object.
 Creates a timeline visualization of infections within a household,
 showing transmission links with probabilities.
 }
-\keyword{internal}
+\examples{
+\dontrun{
+# After fitting the Stan model and post-processing (object names may vary):
+# fit       <- run_household_stan(stan_data = stan_input, ...)
+# chains    <- postprocess_stan_fit(fit, stan_input)
+# trans_df  <- chains$trans_df   # must include: hh_id, source, target, prob
+
+# Plot a specific household (e.g., HH #2)
+p_hh <- plot_household_timeline(
+  trans_df,
+  stan_input,
+  target_hh_id = 2,
+  start_date_str = "2024-10-08",
+  prob_cutoff = 0.10
+)
+print(p_hh)
+}
+}
