@@ -33,6 +33,7 @@ print(result)
 plot(result, which = "posterior")
 
 
+
 # Define vaccination covariate
 vacc_config <- list(
   list(
@@ -48,8 +49,9 @@ result <- GenSyn(
   covariates_config = vacc_config,
   covariates_susceptibility = "vacc_status",
   covariates_infectivity = "vacc_status",
-  stan_chains = 2,
-  stan_iter = 800
+  stan_chains = 1,
+  stan_iter = 200,
+  stan_warmup = 10
 )
 
 # View covariate effects
@@ -70,8 +72,9 @@ result <- TransmissionChainAnalysis(
   user_data = df_person,
   max_days = 30,
   stan_chains = 2,
-  stan_iter = 800,
+  stan_iter = 200,
   stan_warmup = 10
 )
 
 print(result)
+plot(result, which = "all")

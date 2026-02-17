@@ -2,7 +2,7 @@
 % Please edit documentation in R/analysis-functions.R
 \name{summarize_attack_rates}
 \alias{summarize_attack_rates}
-\title{Summarize Attack Rates & Reinfections}
+\title{Summarize Attack Rates and Reinfections}
 \usage{
 summarize_attack_rates(sim_result)
 }

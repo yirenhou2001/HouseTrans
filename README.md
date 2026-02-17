@@ -50,7 +50,7 @@ result <- GenSyn(
   end_date = "2025-06-30",
   stan_chains = 2,
   stan_iter = 1000,
-  stan_warmup = 500,
+  stan_warmup = 50,
   seed = 123
 )
 
@@ -80,7 +80,8 @@ result <- GenSyn(
   covariates_susceptibility = "vacc_status",
   covariates_infectivity = "vacc_status",
   stan_chains = 2,
-  stan_iter = 1000
+  stan_iter = 1000,
+  stan_warmup = 50
 )
 
 # View covariate effects
@@ -106,7 +107,7 @@ result <- TransmissionChainAnalysis(
   max_days = 30,
   stan_chains = 2,
   stan_iter = 1000,
-  stan_warmup = 500
+  stan_warmup = 50
 )
 
 print(result)
@@ -154,7 +155,7 @@ plot(result, which = "epidemic_curve")
 ```r
 surveillance_df <- data.frame(
   date = seq(as.Date("2024-07-01"), as.Date("2025-06-30"), by = "day"),
-  cases = c(10, 12, 15, 20, 25, 30, ...)  # daily case counts
+  cases = c(10, 12, 15, 20, 25, 30, ...)  # Daily case counts
 )
 ```
 

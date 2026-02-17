@@ -1,12 +1,904 @@
 ---
-title: "Reproducible Analysis Code"
-author: "HouseTrans"
-date: "`r format(Sys.Date())`"
-output: rmarkdown::html_vignette
+title: "Reproducible Analysis: Manuscript Simulation Studies"
+author: "HouseTrans Development Team"
+date: "`r Sys.Date()`"
+output: 
+  rmarkdown::html_vignette:
+    toc: true
+    toc_depth: 3
 vignette: >
-  %\VignetteIndexEntry{Reproducible Analysis}
+  %\VignetteIndexEntry{Reproducible Analysis: Manuscript Simulation Studies}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  eval = FALSE,
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 10,
+  fig.height = 7,
+  warning = FALSE,
+  message = FALSE
+)
+```
 
+## Overview
+
+This vignette reproduces all analyses and figures from the manuscript:
+
+> **HouseTrans: A Flexible Bayesian Framework for Simulating and Analyzing Household Transmission Dynamics**
+
+The three simulation studies demonstrate:
+
+1. **Simulation Study 1**: Parameter Recovery and Model Validation
+2. **Simulation Study 2**: Impact of Household Structure
+3. **Simulation Study 3**: Application to Intervention Modeling
+
+```{r load_packages}
+library(HouseTrans)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(rstan)
+library(ggpubr)
+
+# Set global seed for reproducibility
+set.seed(42)
+```
+
+---
+
+## Surveillance Data
+
+All simulation studies use a common surveillance dataset representing seasonal respiratory virus activity (e.g., RSV).
+
+```{r surveillance_data}
+# Create surveillance data spanning July 2024 - June 2025
+dates <- seq(as.Date("2024-07-01"), as.Date("2025-06-30"), by = "day")
+n_days <- length(dates)
+
+# Winter peak pattern (RSV-like seasonality)
+set.seed(123)
+day_of_year <- as.numeric(format(dates, "%j"))
+
+# Peak in mid-December (day ~350), trough in summer
+seasonal_pattern <- 100 * exp(-((day_of_year - 350) %% 365 - 182.5)^2 / (2 * 60^2))
+noise <- rnorm(n_days, 0, 8)
+cases <- pmax(0, round(seasonal_pattern + noise))
+
+surveillance_data <- data.frame(
+  date = dates,
+  cases = cases
+)
+
+# Plot surveillance data
+p_surveillance <- ggplot(surveillance_data, aes(x = date, y = cases)) +
+  geom_line(color = "grey30", linewidth = 0.8) +
+  labs(
+    title = "Community Surveillance Data",
+    subtitle = "Simulated RSV-like seasonal pattern",
+    x = "Date",
+    y = "Weekly Cases"
+  ) +
+  theme_bw(base_size = 14) +
+  theme(
+    panel.grid.minor = element_blank(),
+    plot.title = element_text(face = "bold")
+  )
+
+print(p_surveillance)
+```
+
+---
+
+## Simulation Study 1: Parameter Recovery and Model Validation
+
+### Objective
+
+Validate the package's ability to recover known transmission parameters through a simulation-estimation study.
+
+### Study Design
+
+- **100 households** simulated over 365 days
+- **Household composition**: 
+  - 2 parents (always)
+  - 1 infant (always)
+  - 0-2 siblings (0%, 80%, 20%)
+  - 0-2 grandparents (70%, 10%, 20%)
+- **True parameters**:
+  - Infants: 3× susceptibility relative to adults
+  - Toddlers: 4× susceptibility, 2× infectivity relative to adults
+- **Sampling**: Every 4 days
+
+### Code
+
+```{r study1_setup}
+# Household composition profile
+household_profile <- list(
+  prob_adults   = c(0, 0, 1),      # Always 2 adults
+  prob_infant   = 1.0,             # Always 1 infant
+  prob_siblings = c(0, 0.8, 0.2),  # 0/1/2 siblings at 0%, 80%, 20%
+  prob_elderly  = c(0.7, 0.1, 0.2) # 0/1/2 grandparents at 70%, 10%, 20%
+)
+
+# True transmission parameters
+true_phi   <- c(adult = 1, infant = 3, toddler = 4, elderly = 1)
+true_kappa <- c(adult = 1, infant = 1, toddler = 2, elderly = 1)
+```
+
+```{r study1_simulate}
+# Run simulation
+sim_res <- simulate_multiple_households_comm(
+  n_households = 100,
+  viral_testing = "viral load",
+  infectious_shape = 10,
+  infectious_scale = 1,
+  waning_shape = 6,
+  waning_scale = 10,
+  surveillance_interval = 4,
+  start_date = "2024-07-01",
+  end_date = "2025-06-30",
+  surveillance_df = surveillance_data,
+  phi_by_role = true_phi,
+  kappa_by_role = true_kappa,
+  seed = 123,
+  household_profile_list = household_profile
+)
+
+# Calculate attack rates
+rates <- summarize_attack_rates(sim_res)
+```
+
+```{r study1_attack_rates}
+# Display attack rates
+cat("=== Overall Attack Rates ===\n")
+print(rates$primary_overall)
+
+cat("\n=== Attack Rates by Role ===\n")
+print(rates$primary_by_role)
+
+cat("\n=== Reinfection Summary ===\n")
+print(rates$reinf_overall)
+```
+
+### Figure 1: Epidemic Curve
+
+```{r study1_fig1, fig.width=10, fig.height=6}
+# Generate Figure 1: Epidemic curve
+fig1 <- plot_epidemic_curve(
+  sim_result = sim_res,
+  surveillance_df = surveillance_data,
+  start_date_str = "2024-07-01",
+  bin_width = 7
+)
+
+fig1 <- fig1 +
+  labs(
+    title = "Figure 1. Temporal Distribution of Simulated Infections",
+    subtitle = "Study cohort compared to community surveillance data"
+  ) +
+  theme(
+    plot.title = element_text(face = "bold", size = 14),
+    plot.subtitle = element_text(size = 11)
+  )
+
+print(fig1)
+
+# Save figure
+ggsave("Figure1_epidemic_curve.pdf", fig1, width = 10, height = 6, dpi = 300)
+ggsave("Figure1_epidemic_curve.png", fig1, width = 10, height = 6, dpi = 300)
+```
+
+### Model Fitting
+
+```{r study1_fit}
+# Prepare data for Stan
+stan_data_s1 <- prepare_stan_data(
+  df_clean = sim_res$diagnostic_df,
+  surveillance_df = surveillance_data,
+  study_start_date = as.Date("2024-07-01"),
+  study_end_date = as.Date("2025-06-30"),
+  use_vl_data = TRUE,
+  seed = 123
+)
+
+# Fit model
+fit_s1 <- fit_household_model(
+  stan_data = stan_data_s1,
+  iter = 2000,
+  chains = 4,
+  warmup = 1000,
+  cores = 4,
+  control = list(adapt_delta = 0.95, max_treedepth = 15),
+  refresh = 100
+)
+
+# Check convergence
+posterior_s1 <- postprocess_stan_fit(fit_s1)
+print(posterior_s1)
+```
+
+### Figure 2: Posterior Distributions
+
+```{r study1_fig2, fig.width=12, fig.height=8}
+# Extract posteriors
+post_s1 <- rstan::extract(fit_s1)
+
+# Prepare data for plotting
+# Susceptibility (phi)
+phi_df <- data.frame(
+  value = c(
+    log10(post_s1$phi_by_role[,2]),  # Infant
+    log10(post_s1$phi_by_role[,3]),  # Toddler
+    log10(post_s1$phi_by_role[,4])   # Elderly
+  ),
+  role = factor(rep(c("Infant", "Toddler", "Elderly"), 
+                    each = nrow(post_s1$phi_by_role)),
+                levels = c("Infant", "Toddler", "Elderly"))
+)
+
+# Infectivity (kappa)
+kappa_df <- data.frame(
+  value = c(
+    log10(post_s1$kappa_by_role[,2]),  # Infant
+    log10(post_s1$kappa_by_role[,3]),  # Toddler
+    log10(post_s1$kappa_by_role[,4])   # Elderly
+  ),
+  role = factor(rep(c("Infant", "Toddler", "Elderly"), 
+                    each = nrow(post_s1$kappa_by_role)),
+                levels = c("Infant", "Toddler", "Elderly"))
+)
+
+# Transmission rates
+beta_df <- data.frame(
+  value = c(post_s1$beta1, post_s1$beta2),
+  parameter = factor(rep(c("β₁ (Baseline)", "β₂ (VL-dependent)"), 
+                         each = length(post_s1$beta1)))
+)
+
+# True values for reference lines
+true_phi_log10 <- data.frame(
+  role = c("Infant", "Toddler", "Elderly"),
+  true_val = log10(c(3, 4, 1))
+)
+true_kappa_log10 <- data.frame(
+  role = c("Infant", "Toddler", "Elderly"),
+  true_val = log10(c(1, 2, 1))
+)
+
+# Color palette
+role_colors <- c("Infant" = "#79AF97FF", "Toddler" = "#DF8F44FF", "Elderly" = "#B24745FF")
+
+# Panel A: Susceptibility
+fig2a <- ggplot(phi_df, aes(x = role, y = value, fill = role)) +
+  geom_violin(alpha = 0.7, trim = FALSE) +
+  geom_boxplot(width = 0.15, fill = "white", outlier.shape = NA) +
+  geom_hline(data = true_phi_log10, aes(yintercept = true_val),
+             linetype = "dashed", color = "black", linewidth = 0.8) +
+  geom_hline(yintercept = 0, linetype = "solid", color = "grey50") +
+  scale_fill_manual(values = role_colors) +
+  labs(
+    title = "A. Relative Susceptibility (φ)",
+    x = "",
+    y = "log₁₀(φ)"
+  ) +
+  theme_bw(base_size = 14) +
+  theme(
+    legend.position = "none",
+    panel.grid.minor = element_blank(),
+    plot.title = element_text(face = "bold")
+  )
+
+# Panel B: Infectivity
+fig2b <- ggplot(kappa_df, aes(x = role, y = value, fill = role)) +
+  geom_violin(alpha = 0.7, trim = FALSE) +
+  geom_boxplot(width = 0.15, fill = "white", outlier.shape = NA) +
+  geom_hline(data = true_kappa_log10, aes(yintercept = true_val),
+             linetype = "dashed", color = "black", linewidth = 0.8) +
+  geom_hline(yintercept = 0, linetype = "solid", color = "grey50") +
+  scale_fill_manual(values = role_colors) +
+  labs(
+    title = "B. Relative Infectivity (κ)",
+    x = "",
+    y = "log₁₀(κ)"
+  ) +
+  theme_bw(base_size = 14) +
+  theme(
+    legend.position = "none",
+    panel.grid.minor = element_blank(),
+    plot.title = element_text(face = "bold")
+  )
+
+# Panel C: Transmission rates
+fig2c <- ggplot(beta_df, aes(x = parameter, y = value, fill = parameter)) +
+  geom_violin(alpha = 0.7, trim = FALSE) +
+  geom_boxplot(width = 0.15, fill = "white", outlier.shape = NA) +
+  scale_fill_manual(values = c("#00A1D5FF", "#6A3D9AFF")) +
+  labs(
+    title = "C. Transmission Rates",
+    x = "",
+    y = "Value"
+  ) +
+  theme_bw(base_size = 14) +
+  theme(
+    legend.position = "none",
+    panel.grid.minor = element_blank(),
+    plot.title = element_text(face = "bold")
+  )
+
+# Combine panels
+fig2 <- ggarrange(fig2a, fig2b, fig2c, ncol = 3, nrow = 1)
+fig2 <- annotate_figure(fig2,
+  top = text_grob("Figure 2. Age-specific Transmission Parameters and Rates",
+                  face = "bold", size = 16)
+)
+
+print(fig2)
+
+ggsave("Figure2_posteriors.pdf", fig2, width = 14, height = 5, dpi = 300)
+ggsave("Figure2_posteriors.png", fig2, width = 14, height = 5, dpi = 300)
+```
+
+### Figure 3: Transmission Chain Reconstruction
+
+```{r study1_fig3, fig.width=11, fig.height=7}
+# Reconstruct transmission chains
+chains_s1 <- reconstruct_transmission_chains(
+  fit = fit_s1,
+  stan_data = stan_data_s1,
+  min_prob_threshold = 0.01
+)
+
+# Find a household with interesting transmission dynamics
+# (Look for households with multiple infections)
+infections_per_hh <- sim_res$hh_df %>%
+  filter(!is.na(infection_time)) %>%
+  count(hh_id, name = "n_infections") %>%
+  arrange(desc(n_infections))
+
+# Select household 8 (or adjust based on data)
+target_hh <- 8
+
+fig3 <- plot_household_timeline(
+  trans_df = chains_s1,
+  stan_data = stan_data_s1,
+  target_hh_id = target_hh,
+  start_date_str = "2024-07-01",
+  prob_cutoff = 0.05,
+  plot_width = 11,
+  plot_height = 7
+)
+
+fig3 <- fig3 +
+  labs(
+    title = paste("Figure 3. Reconstructed Transmission Pathways - Household", target_hh),
+    subtitle = "Arrows show inferred transmission links with associated probabilities"
+  )
+
+print(fig3)
+
+ggsave("Figure3_transmission_chain.pdf", fig3, width = 11, height = 7, dpi = 300)
+ggsave("Figure3_transmission_chain.png", fig3, width = 11, height = 7, dpi = 300)
+```
+
+---
+
+## Simulation Study 2: Impact of Household Structure
+
+### Objective
+
+Investigate how different household structures influence transmission dynamics and parameter estimation.
+
+### Scenarios
+
+| Scenario | Description |
+|----------|-------------|
+| **A** | Nuclear families: 2 parents + 1-2 children, no grandparents |
+| **B** | Extended families: 2 parents + 1-2 children, 15% with grandparents |
+| **C** | Multi-generational: 50% with grandparents, 20% single-parent |
+
+```{r study2_scenarios}
+# Scenario A: Nuclear families (no grandparents)
+profile_A <- list(
+  prob_adults   = c(0, 0, 1),      # Always 2 adults
+  prob_infant   = 1.0,             # Always 1 infant
+  prob_siblings = c(0.2, 0.6, 0.2),# 0/1/2 siblings
+  prob_elderly  = c(1, 0, 0)       # Never grandparents
+)
+
+# Scenario B: Extended families (15% with grandparents)
+profile_B <- list(
+  prob_adults   = c(0, 0, 1),      # Always 2 adults
+  prob_infant   = 1.0,             # Always 1 infant
+  prob_siblings = c(0.2, 0.6, 0.2),# 0/1/2 siblings
+  prob_elderly  = c(0.85, 0.10, 0.05) # 15% have grandparents
+)
+
+# Scenario C: Multi-generational (50% grandparents, 20% single-parent)
+profile_C <- list(
+  prob_adults   = c(0, 0.2, 0.8),  # 20% single parent
+  prob_infant   = 1.0,             # Always 1 infant
+  prob_siblings = c(0.2, 0.6, 0.2),# 0/1/2 siblings
+  prob_elderly  = c(0.5, 0.3, 0.2) # 50% have grandparents
+)
+```
+
+```{r study2_simulate}
+# Common parameters for all scenarios
+common_params <- list(
+  n_households = 100,
+  viral_testing = "viral load",
+  infectious_shape = 10,
+  infectious_scale = 1,
+  waning_shape = 6,
+  waning_scale = 10,
+  surveillance_interval = 4,
+  start_date = "2024-07-01",
+  end_date = "2025-06-30",
+  surveillance_df = surveillance_data,
+  phi_by_role = true_phi,
+  kappa_by_role = true_kappa
+)
+
+# Simulate each scenario
+set.seed(456)
+
+sim_A <- do.call(simulate_multiple_households_comm, 
+                 c(common_params, list(household_profile_list = profile_A, seed = 456)))
+
+sim_B <- do.call(simulate_multiple_households_comm, 
+                 c(common_params, list(household_profile_list = profile_B, seed = 457)))
+
+sim_C <- do.call(simulate_multiple_households_comm, 
+                 c(common_params, list(household_profile_list = profile_C, seed = 458)))
+```
+
+```{r study2_attack_rates}
+# Calculate attack rates for each scenario
+rates_A <- summarize_attack_rates(sim_A)
+rates_B <- summarize_attack_rates(sim_B)
+rates_C <- summarize_attack_rates(sim_C)
+
+# Create Table 1
+table1 <- data.frame(
+  Scenario = c("A: Nuclear", "B: Extended", "C: Multi-generational"),
+  Households = 100,
+  Total_Population = c(
+    rates_A$primary_overall$Total_Pop,
+    rates_B$primary_overall$Total_Pop,
+    rates_C$primary_overall$Total_Pop
+  ),
+  Total_Infected = c(
+    rates_A$primary_overall$Total_Infected_People,
+    rates_B$primary_overall$Total_Infected_People,
+    rates_C$primary_overall$Total_Infected_People
+  ),
+  Attack_Rate = c(
+    rates_A$primary_overall$Primary_Attack_Rate,
+    rates_B$primary_overall$Primary_Attack_Rate,
+    rates_C$primary_overall$Primary_Attack_Rate
+  )
+)
+
+cat("=== Table 1: Household Structures and Attack Rates ===\n")
+print(table1)
+```
+
+### Fit Models for Each Scenario
+
+```{r study2_fit}
+# Prepare Stan data for each scenario
+stan_A <- prepare_stan_data(
+  df_clean = sim_A$diagnostic_df,
+  surveillance_df = surveillance_data,
+  study_start_date = as.Date("2024-07-01"),
+  study_end_date = as.Date("2025-06-30"),
+  use_vl_data = TRUE,
+  seed = 456
+)
+
+stan_B <- prepare_stan_data(
+  df_clean = sim_B$diagnostic_df,
+  surveillance_df = surveillance_data,
+  study_start_date = as.Date("2024-07-01"),
+  study_end_date = as.Date("2025-06-30"),
+  use_vl_data = TRUE,
+  seed = 457
+)
+
+stan_C <- prepare_stan_data(
+  df_clean = sim_C$diagnostic_df,
+  surveillance_df = surveillance_data,
+  study_start_date = as.Date("2024-07-01"),
+  study_end_date = as.Date("2025-06-30"),
+  use_vl_data = TRUE,
+  seed = 458
+)
+
+# Fit models (this may take a while)
+fit_A <- fit_household_model(stan_data = stan_A, iter = 2000, chains = 4, 
+                             warmup = 1000, cores = 4, refresh = 100)
+fit_B <- fit_household_model(stan_data = stan_B, iter = 2000, chains = 4, 
+                             warmup = 1000, cores = 4, refresh = 100)
+fit_C <- fit_household_model(stan_data = stan_C, iter = 2000, chains = 4, 
+                             warmup = 1000, cores = 4, refresh = 100)
+```
+
+### Figure 4: Parameter Estimates by Household Structure
+
+```{r study2_fig4, fig.width=12, fig.height=6}
+# Extract posteriors
+post_A <- rstan::extract(fit_A)
+post_B <- rstan::extract(fit_B)
+post_C <- rstan::extract(fit_C)
+
+# Combine phi estimates
+phi_combined <- rbind(
+  data.frame(
+    scenario = "A: Nuclear",
+    role = rep(c("Infant", "Toddler", "Elderly"), each = nrow(post_A$phi_by_role)),
+    value = c(log10(post_A$phi_by_role[,2]), log10(post_A$phi_by_role[,3]), 
+              log10(post_A$phi_by_role[,4]))
+  ),
+  data.frame(
+    scenario = "B: Extended",
+    role = rep(c("Infant", "Toddler", "Elderly"), each = nrow(post_B$phi_by_role)),
+    value = c(log10(post_B$phi_by_role[,2]), log10(post_B$phi_by_role[,3]), 
+              log10(post_B$phi_by_role[,4]))
+  ),
+  data.frame(
+    scenario = "C: Multi-generational",
+    role = rep(c("Infant", "Toddler", "Elderly"), each = nrow(post_C$phi_by_role)),
+    value = c(log10(post_C$phi_by_role[,2]), log10(post_C$phi_by_role[,3]), 
+              log10(post_C$phi_by_role[,4]))
+  )
+)
+
+phi_combined$role <- factor(phi_combined$role, levels = c("Infant", "Toddler", "Elderly"))
+phi_combined$scenario <- factor(phi_combined$scenario, 
+                                levels = c("A: Nuclear", "B: Extended", "C: Multi-generational"))
+
+# Combine kappa estimates
+kappa_combined <- rbind(
+  data.frame(
+    scenario = "A: Nuclear",
+    role = rep(c("Infant", "Toddler", "Elderly"), each = nrow(post_A$kappa_by_role)),
+    value = c(log10(post_A$kappa_by_role[,2]), log10(post_A$kappa_by_role[,3]), 
+              log10(post_A$kappa_by_role[,4]))
+  ),
+  data.frame(
+    scenario = "B: Extended",
+    role = rep(c("Infant", "Toddler", "Elderly"), each = nrow(post_B$kappa_by_role)),
+    value = c(log10(post_B$kappa_by_role[,2]), log10(post_B$kappa_by_role[,3]), 
+              log10(post_B$kappa_by_role[,4]))
+  ),
+  data.frame(
+    scenario = "C: Multi-generational",
+    role = rep(c("Infant", "Toddler", "Elderly"), each = nrow(post_C$kappa_by_role)),
+    value = c(log10(post_C$kappa_by_role[,2]), log10(post_C$kappa_by_role[,3]), 
+              log10(post_C$kappa_by_role[,4]))
+  )
+)
+
+kappa_combined$role <- factor(kappa_combined$role, levels = c("Infant", "Toddler", "Elderly"))
+kappa_combined$scenario <- factor(kappa_combined$scenario, 
+                                  levels = c("A: Nuclear", "B: Extended", "C: Multi-generational"))
+
+# Panel A: Susceptibility
+fig4a <- ggplot(phi_combined, aes(x = role, y = value, fill = scenario)) +
+  geom_violin(alpha = 0.7, position = position_dodge(0.8)) +
+  geom_boxplot(width = 0.2, position = position_dodge(0.8), 
+               fill = "white", outlier.shape = NA) +
+  geom_hline(data = true_phi_log10, aes(yintercept = true_val),
+             linetype = "dashed", color = "black", linewidth = 0.8) +
+  geom_hline(yintercept = 0, linetype = "solid", color = "grey50") +
+  scale_fill_brewer(palette = "Set2") +
+  labs(
+    title = "A. Relative Susceptibility (φ)",
+    x = "",
+    y = "log₁₀(φ)",
+    fill = "Scenario"
+  ) +
+  theme_bw(base_size = 12) +
+  theme(
+    legend.position = "bottom",
+    panel.grid.minor = element_blank(),
+    plot.title = element_text(face = "bold")
+  )
+
+# Panel B: Infectivity
+fig4b <- ggplot(kappa_combined, aes(x = role, y = value, fill = scenario)) +
+  geom_violin(alpha = 0.7, position = position_dodge(0.8)) +
+  geom_boxplot(width = 0.2, position = position_dodge(0.8), 
+               fill = "white", outlier.shape = NA) +
+  geom_hline(data = true_kappa_log10, aes(yintercept = true_val),
+             linetype = "dashed", color = "black", linewidth = 0.8) +
+  geom_hline(yintercept = 0, linetype = "solid", color = "grey50") +
+  scale_fill_brewer(palette = "Set2") +
+  labs(
+    title = "B. Relative Infectivity (κ)",
+    x = "",
+    y = "log₁₀(κ)",
+    fill = "Scenario"
+  ) +
+  theme_bw(base_size = 12) +
+  theme(
+    legend.position = "bottom",
+    panel.grid.minor = element_blank(),
+    plot.title = element_text(face = "bold")
+  )
+
+# Combine
+fig4 <- ggarrange(fig4a, fig4b, ncol = 2, common.legend = TRUE, legend = "bottom")
+fig4 <- annotate_figure(fig4,
+  top = text_grob("Figure 4. Age-specific Parameters by Household Structure",
+                  face = "bold", size = 16)
+)
+
+print(fig4)
+
+ggsave("Figure4_household_structure.pdf", fig4, width = 12, height = 6, dpi = 300)
+ggsave("Figure4_household_structure.png", fig4, width = 12, height = 6, dpi = 300)
+```
+
+---
+
+## Simulation Study 3: Application to Intervention Modeling
+
+### Objective
+
+Demonstrate the covariate functionality using a simulated household-randomized immunization intervention.
+
+### Intervention Design
+
+- **Coverage**: 80% of infants vaccinated
+- **Efficacy on susceptibility**: 80% reduction
+- **Efficacy on infectivity**: 80% reduction
+
+```{r study3_setup}
+# Define vaccination covariate
+vacc_config <- list(
+  list(
+    name = "vacc_status",
+    efficacy = 0.8,           # 80% efficacy
+    effect_on = "both",       # Affects both susceptibility and infectivity
+    coverage = list(
+      infant = 0.8,           # 80% coverage in infants
+      toddler = 0,            # No coverage
+      adult = 0,              # No coverage
+      elderly = 0             # No coverage
+    )
+  )
+)
+
+# True covariate effects for validation
+# log(1 - 0.8) = log(0.2) ≈ -1.61
+true_beta_susc <- log(0.2)  # ≈ -1.61
+true_beta_inf  <- log(0.2)  # ≈ -1.61
+```
+
+```{r study3_simulate}
+# Simulate with intervention
+set.seed(789)
+
+sim_intervention <- simulate_multiple_households_comm(
+  n_households = 100,
+  viral_testing = "viral load",
+  infectious_shape = 10,
+  infectious_scale = 1,
+  waning_shape = 6,
+  waning_scale = 10,
+  surveillance_interval = 4,
+  start_date = "2024-07-01",
+  end_date = "2025-06-30",
+  surveillance_df = surveillance_data,
+  phi_by_role = true_phi,
+  kappa_by_role = true_kappa,
+  household_profile_list = household_profile,
+  covariates_config = vacc_config,
+  seed = 789
+)
+
+# Check vaccination coverage
+vacc_coverage <- sim_intervention$hh_df %>%
+  group_by(role) %>%
+  summarise(
+    n_total = n_distinct(paste(hh_id, person_id)),
+    n_vaccinated = sum(vacc_status == 1, na.rm = TRUE) / n(),
+    .groups = "drop"
+  )
+
+cat("=== Vaccination Coverage by Role ===\n")
+print(vacc_coverage)
+```
+
+```{r study3_fit}
+# Prepare data with covariates
+# First, merge covariate data into diagnostic_df
+cov_data <- sim_intervention$hh_df %>%
+  select(hh_id, person_id, vacc_status) %>%
+  distinct()
+
+df_with_cov <- sim_intervention$diagnostic_df %>%
+  left_join(cov_data, by = c("hh_id", "person_id"))
+
+# Prepare Stan data
+stan_intervention <- prepare_stan_data(
+  df_clean = df_with_cov,
+  surveillance_df = surveillance_data,
+  study_start_date = as.Date("2024-07-01"),
+  study_end_date = as.Date("2025-06-30"),
+  use_vl_data = TRUE,
+  covariates_susceptibility = "vacc_status",
+  covariates_infectivity = "vacc_status",
+  seed = 789
+)
+
+# Check covariate dimensions
+cat("Susceptibility covariates:", stan_intervention$K_susc, "\n")
+cat("Infectivity covariates:", stan_intervention$K_inf, "\n")
+
+# Fit model
+fit_intervention <- fit_household_model(
+  stan_data = stan_intervention,
+  iter = 2000,
+  chains = 4,
+  warmup = 1000,
+  cores = 4,
+  control = list(adapt_delta = 0.95, max_treedepth = 15),
+  refresh = 100
+)
+```
+
+### Figure 5: Intervention Effects
+
+```{r study3_fig5, fig.width=8, fig.height=6}
+# Extract posteriors
+post_int <- rstan::extract(fit_intervention)
+
+# Covariate effects
+beta_susc <- post_int$beta_susc[,1]  # Effect on susceptibility
+beta_inf <- post_int$beta_inf[,1]    # Effect on infectivity
+
+# Calculate vaccine effectiveness
+# VE = 1 - exp(beta)
+ve_susc <- 1 - exp(beta_susc)
+ve_inf <- 1 - exp(beta_inf)
+
+# Create data frame for plotting
+coef_df <- data.frame(
+  parameter = c(rep("Susceptibility\n(β_susc)", length(beta_susc)),
+                rep("Infectivity\n(β_inf)", length(beta_inf))),
+  value = c(beta_susc, beta_inf)
+)
+
+ve_df <- data.frame(
+  parameter = c(rep("Susceptibility\nReduction", length(ve_susc)),
+                rep("Infectivity\nReduction", length(ve_inf))),
+  value = c(ve_susc, ve_inf)
+)
+
+# True values
+true_coef <- data.frame(
+  parameter = c("Susceptibility\n(β_susc)", "Infectivity\n(β_inf)"),
+  true_val = c(true_beta_susc, true_beta_inf)
+)
+
+true_ve <- data.frame(
+  parameter = c("Susceptibility\nReduction", "Infectivity\nReduction"),
+  true_val = c(0.8, 0.8)
+)
+
+# Panel A: Coefficient estimates
+fig5a <- ggplot(coef_df, aes(x = parameter, y = value, fill = parameter)) +
+  geom_violin(alpha = 0.7, trim = FALSE) +
+  geom_boxplot(width = 0.2, fill = "white", outlier.shape = NA) +
+  geom_point(data = true_coef, aes(x = parameter, y = true_val),
+             shape = 18, size = 5, color = "red") +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey50") +
+  scale_fill_manual(values = c("#E41A1C", "#377EB8")) +
+  labs(
+    title = "A. Covariate Coefficients",
+    subtitle = "Red diamonds indicate true values",
+    x = "",
+    y = "Coefficient (log scale)"
+  ) +
+  theme_bw(base_size = 14) +
+  theme(
+    legend.position = "none",
+    panel.grid.minor = element_blank(),
+    plot.title = element_text(face = "bold")
+  )
+
+# Panel B: Vaccine effectiveness
+fig5b <- ggplot(ve_df, aes(x = parameter, y = value * 100, fill = parameter)) +
+  geom_violin(alpha = 0.7, trim = FALSE) +
+  geom_boxplot(width = 0.2, fill = "white", outlier.shape = NA) +
+  geom_point(data = true_ve, aes(x = parameter, y = true_val * 100),
+             shape = 18, size = 5, color = "red") +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey50") +
+  scale_fill_manual(values = c("#E41A1C", "#377EB8")) +
+  labs(
+    title = "B. Vaccine Effectiveness",
+    subtitle = "Estimated reduction in susceptibility/infectivity",
+    x = "",
+    y = "Effectiveness (%)"
+  ) +
+  ylim(-50, 100) +
+  theme_bw(base_size = 14) +
+  theme(
+    legend.position = "none",
+    panel.grid.minor = element_blank(),
+    plot.title = element_text(face = "bold")
+  )
+
+# Combine
+fig5 <- ggarrange(fig5a, fig5b, ncol = 2)
+fig5 <- annotate_figure(fig5,
+  top = text_grob("Figure 5. Estimates of Intervention Effects",
+                  face = "bold", size = 16)
+)
+
+print(fig5)
+
+ggsave("Figure5_intervention.pdf", fig5, width = 10, height = 6, dpi = 300)
+ggsave("Figure5_intervention.png", fig5, width = 10, height = 6, dpi = 300)
+```
+
+```{r study3_summary}
+# Summarize intervention effectiveness
+cat("\n=== Intervention Effect Estimates ===\n\n")
+
+cat("Effect on Susceptibility (β_susc):\n")
+cat("  Posterior median:", round(median(beta_susc), 2), "\n")
+cat("  95% CI: [", round(quantile(beta_susc, 0.025), 2), ", ",
+    round(quantile(beta_susc, 0.975), 2), "]\n")
+cat("  True value:", round(true_beta_susc, 2), "\n\n")
+
+cat("Vaccine Effectiveness on Susceptibility:\n")
+cat("  Posterior median:", round(median(ve_susc) * 100, 1), "%\n")
+cat("  95% CI: [", round(quantile(ve_susc, 0.025) * 100, 1), "%, ",
+    round(quantile(ve_susc, 0.975) * 100, 1), "%]\n")
+cat("  True value: 80%\n\n")
+
+cat("Effect on Infectivity (β_inf):\n")
+cat("  Posterior median:", round(median(beta_inf), 2), "\n")
+cat("  95% CI: [", round(quantile(beta_inf, 0.025), 2), ", ",
+    round(quantile(beta_inf, 0.975), 2), "]\n")
+cat("  True value:", round(true_beta_inf, 2), "\n\n")
+
+cat("Vaccine Effectiveness on Infectivity:\n")
+cat("  Posterior median:", round(median(ve_inf) * 100, 1), "%\n")
+cat("  95% CI: [", round(quantile(ve_inf, 0.025) * 100, 1), "%, ",
+    round(quantile(ve_inf, 0.975) * 100, 1), "%]\n")
+cat("  True value: 80%\n")
+```
+
+---
+
+## Summary
+
+This vignette reproduced all simulation studies from the manuscript:
+
+| Study | Objective | Key Finding |
+|-------|-----------|-------------|
+| **Study 1** | Parameter recovery | Model successfully recovers true parameters |
+| **Study 2** | Household structure | Multi-generational households improve elderly parameter estimation |
+| **Study 3** | Intervention effects | Model accurately estimates vaccine effectiveness |
+
+### Files Generated
+
+- `Figure1_epidemic_curve.pdf/png` - Epidemic curve
+- `Figure2_posteriors.pdf/png` - Posterior distributions
+- `Figure3_transmission_chain.pdf/png` - Transmission chain reconstruction
+- `Figure4_household_structure.pdf/png` - Parameter estimates by structure
+- `Figure5_intervention.pdf/png` - Intervention effects
+
+## Session Info
+
+```{r session}
+sessionInfo()
+```

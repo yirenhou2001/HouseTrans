@@ -5,7 +5,7 @@
 NULL
 
 
-#' Summarize Attack Rates & Reinfections
+#' Summarize Attack Rates and Reinfections
 #'
 #' Calculates the Primary Attack Rate (proportion of people infected at least once)
 #' and a separate summary of Reinfections (secondary episodes).

@@ -1,10 +1,568 @@
 ---
-title: "Getting Started: Simulation and Estimation for Household Transmission"
-author: "HouseTrans"
-date: "`r format(Sys.Date())`"
-output: rmarkdown::html_vignette
+title: "HouseTrans Tutorial: A Complete Workflow"
+author: "HouseTrans Development Team"
+date: "`r Sys.Date()`"
+output: 
+  rmarkdown::html_vignette:
+    toc: true
+    toc_depth: 3
 vignette: >
-  %\VignetteIndexEntry{Getting Started}
+  %\VignetteIndexEntry{HouseTrans Tutorial: A Complete Workflow}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  eval = FALSE,
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 8,
+  fig.height = 6
+)
+```
+
+## Introduction
+
+This vignette provides a step-by-step tutorial for using the **HouseTrans** package to simulate household transmission data, prepare it for Bayesian inference, run Stan models, assess convergence, and produce publication-quality figures.
+
+**HouseTrans** provides a unified framework for:
+
+1. Simulating realistic household transmission dynamics
+2. Estimating age-specific susceptibility and infectivity parameters
+3. Evaluating intervention effects (vaccines, antivirals, etc.)
+4. Reconstructing transmission chains within households
+
+### Prerequisites
+
+```{r install, eval=FALSE}
+# Install from GitHub
+devtools::install_github("yirenhou2001/HouseTrans")
+```
+
+```{r load}
+library(HouseTrans)
+library(ggplot2)
+library(dplyr)
+```
+
+---
+
+## Part 1: Understanding the Model
+
+### The Force of Infection
+
+HouseTrans implements a discrete-time stochastic transmission model. For individual $i$ in household $h$ at time $t$, the force of infection is:
+
+$$\lambda_{i,h}(t) = \phi_i \left[ \alpha_{\text{comm}} \cdot S(t) + \sum_{j \neq i} \frac{\kappa_j \cdot C_{ij}}{n_h^\delta} \cdot f_j(t) \right]$$
+
+Where:
+
+- $\phi_i$ = age-specific susceptibility
+- $\kappa_j$ = age-specific infectivity  
+- $\alpha_{\text{comm}}$ = community transmission rate
+- $S(t)$ = seasonal forcing
+- $C_{ij}$ = contact matrix
+- $n_h$ = household size
+- $\delta$ = household size scaling
+- $f_j(t)$ = infectiousness function (viral load or gamma-distributed)
+
+### Role Categories
+
+The package uses four role categories:
+
+| Role | Description | Default Susceptibility | Default Infectivity |
+|------|-------------|------------------------|---------------------|
+| `adult` | Parents (reference) | 1.0 | 1.0 |
+| `infant` | Index child/baby | 4.0 | 1.0 |
+| `toddler` | Older siblings | 5.0 | 1.2 |
+| `elderly` | Grandparents | 1.0 | 1.0 |
+
+---
+
+## Part 2: Simulating Data
+
+### Step 2.1: Create Surveillance Data
+
+Surveillance data drives the seasonal forcing in the simulation. This represents community-level disease activity over time.
+
+```{r surveillance}
+# Create synthetic surveillance data (e.g., RSV seasonal pattern)
+set.seed(123)
+dates <- seq(as.Date("2024-07-01"), as.Date("2025-06-30"), by = "day")
+n_days <- length(dates)
+
+# Create a winter peak pattern (RSV typically peaks in winter)
+day_of_year <- as.numeric(format(dates, "%j"))
+# Peak around day 350 (mid-December) with secondary considerations
+seasonal_pattern <- 100 * exp(-((day_of_year - 350) %% 365 - 182.5)^2 / (2 * 60^2))
+noise <- rnorm(n_days, 0, 10)
+cases <- pmax(0, round(seasonal_pattern + noise))
+
+surveillance_data <- data.frame(
+  date = dates,
+  cases = cases
+)
+
+# Visualize
+ggplot(surveillance_data, aes(x = date, y = cases)) +
+  geom_line(color = "steelblue") +
+  labs(title = "Simulated Surveillance Data",
+       x = "Date", y = "Daily Cases") +
+  theme_minimal()
+```
+
+### Step 2.2: Define Household Structure
+
+```{r household_profile}
+# Define household composition
+# This creates households with:
+# - Always 2 adults
+# - Always 1 infant
+# - 0-2 toddlers (siblings) with probabilities 0%, 80%, 20%
+# - 0-2 elderly with probabilities 70%, 10%, 20%
+
+household_profile <- list(
+  prob_adults   = c(0, 0, 1),      # Always 2 adults
+  prob_infant   = 1.0,             # Always 1 infant
+  prob_siblings = c(0, 0.8, 0.2),  # 80% have 1 sibling, 20% have 2
+  prob_elderly  = c(0.7, 0.1, 0.2) # 70% no grandparents
+)
+```
+
+### Step 2.3: Run Simulation (Without Fitting)
+
+For quick exploration, you can run just the simulation without Stan fitting:
+
+```{r simulate_only}
+# Simulate 100 households over 1 year
+sim_result <- simulate_multiple_households_comm(
+  n_households = 100,
+  surveillance_df = surveillance_data,
+  start_date = "2024-07-01",
+  end_date = "2025-06-30",
+  
+  # Transmission parameters
+  phi_by_role = c(adult = 1, infant = 3, toddler = 4, elderly = 1),
+  kappa_by_role = c(adult = 1, infant = 1, toddler = 2, elderly = 1),
+  
+  # Testing scheme
+  viral_testing = "viral load",
+  surveillance_interval = 4,  # Test every 4 days
+  
+  # Infectious period parameters
+  infectious_shape = 10,
+  infectious_scale = 1,
+  
+  # Immunity waning
+  waning_shape = 6,
+  waning_scale = 10,
+  
+  # Household structure
+  household_profile_list = household_profile,
+  
+  seed = 123
+)
+```
+
+### Step 2.4: Examine Simulation Output
+
+```{r examine_sim}
+# The simulation returns two data frames:
+# 1. hh_df: Person-level infection data
+# 2. diagnostic_df: Testing/sampling data
+
+# View household-level data
+head(sim_result$hh_df)
+
+# View diagnostic data (what would be observed in a real study)
+head(sim_result$diagnostic_df)
+
+# Calculate attack rates
+rates <- summarize_attack_rates(sim_result)
+print(rates$primary_overall)
+print(rates$primary_by_role)
+```
+
+### Step 2.5: Visualize Epidemic Curve
+
+```{r epi_curve}
+# Compare simulated infections to surveillance data
+plot_epidemic_curve(
+  sim_result = sim_result,
+  surveillance_df = surveillance_data,
+  start_date_str = "2024-07-01",
+  bin_width = 7  # Weekly bins
+)
+```
+
+---
+
+## Part 3: Running Stan Inference
+
+### Step 3.1: Using GenSyn() for Simulation + Fitting
+
+The `GenSyn()` function combines simulation and Stan fitting in one call:
+
+```{r gensyn}
+# Full simulation + estimation pipeline
+result <- GenSyn(
+  # Simulation parameters
+  n_households = 100,
+  surveillance_df = surveillance_data,
+  start_date = "2024-07-01",
+  end_date = "2025-06-30",
+  household_profile_list = household_profile,
+  
+  # True transmission parameters (for validation)
+  phi_by_role = c(adult = 1, infant = 3, toddler = 4, elderly = 1),
+  kappa_by_role = c(adult = 1, infant = 1, toddler = 2, elderly = 1),
+  
+  # Testing
+  viral_testing = "viral load",
+  surveillance_interval = 4,
+  infectious_shape = 10,
+  infectious_scale = 1,
+  
+  # Stan settings
+  stan_chains = 4,
+  stan_iter = 2000,
+  stan_warmup = 1000,
+  stan_cores = 4,
+  
+  seed = 123
+)
+
+# View summary
+print(result)
+```
+
+### Step 3.2: Prepare Data Separately (Advanced)
+
+For more control, you can prepare Stan data separately:
+
+```{r prepare_stan}
+# Prepare data for Stan
+stan_data <- prepare_stan_data(
+  df_clean = sim_result$diagnostic_df,
+  surveillance_df = surveillance_data,
+  study_start_date = as.Date("2024-07-01"),
+  study_end_date = as.Date("2025-06-30"),
+  use_vl_data = TRUE,
+  priors = list(
+    beta1 = list(dist = "normal", params = c(-5, 1)),
+    beta2 = list(dist = "normal", params = c(-5, 1)),
+    alpha = list(dist = "normal", params = c(-6, 2))
+  ),
+  seed = 123
+)
+
+# Check data dimensions
+cat("Number of person-episodes:", stan_data$N, "\n")
+cat("Time points:", stan_data$T, "\n")
+cat("Households:", stan_data$H, "\n")
+cat("Roles:", stan_data$R, "\n")
+```
+
+### Step 3.3: Fit the Model
+
+```{r fit_model}
+# Fit using Stan
+fit <- fit_household_model(
+  stan_data = stan_data,
+  iter = 5000,
+  chains = 3,
+  warmup = 500,
+  cores = 3,
+  control = list(adapt_delta = 0.95, max_treedepth = 15),
+  refresh = 100
+)
+```
+
+---
+
+## Part 4: Assessing Convergence
+
+### Step 4.1: Basic Convergence Diagnostics
+
+```{r convergence}
+# Extract summary
+posterior_summary <- postprocess_stan_fit(fit)
+print(posterior_summary)
+
+# Check Rhat values (should be < 1.01)
+rhat_check <- posterior_summary %>%
+  filter(Rhat > 1.01)
+
+if (nrow(rhat_check) > 0) {
+  warning("Some parameters have Rhat > 1.01:")
+  print(rhat_check)
+} else {
+  cat("All Rhat values < 1.01: Good convergence!\n")
+}
+
+# Check effective sample size (should be > 400)
+neff_check <- posterior_summary %>%
+  filter(n_eff < 400)
+
+if (nrow(neff_check) > 0) {
+  warning("Some parameters have n_eff < 400:")
+  print(neff_check)
+} else {
+  cat("All n_eff > 400: Sufficient samples!\n")
+}
+```
+
+### Step 4.2: Visual Diagnostics
+
+```{r trace_plots}
+# Trace plots (using rstan)
+library(rstan)
+
+# Key parameters to check
+key_params <- c("beta1", "beta2", "alpha_comm", 
+                "phi_by_role[1]", "phi_by_role[2]",
+                "kappa_by_role[1]", "kappa_by_role[2]")
+
+# Trace plots
+traceplot(fit, pars = c("beta1", "beta2", "alpha_comm"))
+
+# Pairs plot for correlation
+pairs(fit, pars = c("beta1", "beta2", "alpha_comm"))
+```
+
+### Step 4.3: Posterior Predictive Checks
+
+```{r ppc}
+# Extract posterior samples
+post <- rstan::extract(fit)
+
+# Compare estimated vs true parameters
+# True: phi_infant = 3, phi_toddler = 4
+cat("\nPhi (Susceptibility) Estimates:\n")
+cat("Infant - True: 3, Estimated:", 
+    round(median(post$phi_by_role[,2]), 2), 
+    "(95% CI:", round(quantile(post$phi_by_role[,2], 0.025), 2), "-",
+    round(quantile(post$phi_by_role[,2], 0.975), 2), ")\n")
+cat("Toddler - True: 4, Estimated:", 
+    round(median(post$phi_by_role[,3]), 2),
+    "(95% CI:", round(quantile(post$phi_by_role[,3], 0.025), 2), "-",
+    round(quantile(post$phi_by_role[,3], 0.975), 2), ")\n")
+```
+
+---
+
+## Part 5: Publication-Quality Figures
+
+### Step 5.1: Posterior Distributions
+
+```{r fig_posterior}
+# Using the built-in plotting function
+plots <- plot(result, which = "posterior", print = FALSE)
+
+# Customize the plot
+p_posterior <- plots$posterior +
+  labs(title = "Posterior Distributions of Transmission Parameters",
+       subtitle = "Dashed lines indicate true values") +
+  theme(
+    text = element_text(size = 12),
+    plot.title = element_text(face = "bold", size = 14)
+  )
+
+print(p_posterior)
+
+# Save for publication
+ggsave("fig_posterior.pdf", p_posterior, width = 10, height = 5, dpi = 300)
+```
+
+### Step 5.2: Epidemic Curve
+
+```{r fig_epidemic}
+# Generate epidemic curve
+p_epidemic <- plot_epidemic_curve(
+  sim_result = result$simulation,
+  surveillance_df = surveillance_data,
+  start_date_str = "2024-07-01",
+  bin_width = 7
+)
+
+# Customize
+p_epidemic <- p_epidemic +
+  labs(title = "Temporal Distribution of Infections",
+       subtitle = "Simulated cohort vs. community surveillance") +
+  theme(
+    legend.position = "top",
+    text = element_text(size = 11)
+  )
+
+print(p_epidemic)
+ggsave("fig_epidemic_curve.pdf", p_epidemic, width = 10, height = 6, dpi = 300)
+```
+
+### Step 5.3: Transmission Chain Reconstruction
+
+```{r fig_chains}
+# Reconstruct transmission chains
+chains <- reconstruct_transmission_chains(
+  fit = fit,
+  stan_data = stan_data,
+  min_prob_threshold = 0.01
+)
+
+# Plot a specific household
+p_chain <- plot_household_timeline(
+  trans_df = chains,
+  stan_data = stan_data,
+  target_hh_id = 8,  # Choose household with interesting dynamics
+  start_date_str = "2024-07-01",
+  prob_cutoff = 0.1  # Only show links with >10% probability
+)
+
+print(p_chain)
+ggsave("fig_transmission_chain.pdf", p_chain, width = 11, height = 7, dpi = 300)
+```
+
+### Step 5.4: Combined Figure Panel
+
+```{r fig_panel}
+library(ggpubr)
+
+# Combine plots into a publication figure
+fig_combined <- ggarrange(
+  p_epidemic,
+  p_posterior,
+  p_chain,
+  ncol = 1, nrow = 3,
+  labels = c("A", "B", "C"),
+  heights = c(1, 1, 1.2)
+)
+
+print(fig_combined)
+ggsave("fig_combined.pdf", fig_combined, width = 10, height = 15, dpi = 300)
+```
+
+---
+
+## Part 6: Analyzing Your Own Data
+
+### Step 6.1: Data Format
+
+HouseTrans accepts two data formats:
+
+**Option A: Long-format testing data**
+```{r data_format_long}
+# Your data should look like this:
+example_long <- data.frame(
+  HH = c("HH1", "HH1", "HH1", "HH1", "HH2", "HH2"),
+  individual_ID = c(1, 1, 2, 2, 1, 1),
+  role = c("adult", "adult", "infant", "infant", "adult", "adult"),
+  test_date = as.Date(c("2024-07-15", "2024-07-19", "2024-07-15", "2024-07-19",
+                        "2024-07-15", "2024-07-19")),
+  infection_status = c(0, 1, 0, 1, 1, 1),
+  ct_value = c(NA, 25.3, NA, 22.1, 28.5, 30.2)  # Optional
+)
+print(example_long)
+```
+
+**Option B: Per-person episode data**
+```{r data_format_episode}
+# Alternative format with infection timing
+example_episode <- data.frame(
+  hh_id = c("HH1", "HH1", "HH1", "HH2", "HH2"),
+  person_id = c(1, 2, 3, 1, 2),
+  role = c("adult", "infant", "elderly", "adult", "infant"),
+  infection_time = c(5, 8, NA, 3, 6),
+  infectious_start = c(6, 9, NA, 4, 7),
+  infectious_end = c(12, 15, NA, 10, 13),
+  infection_resolved = c(14, 17, NA, 12, 15)
+)
+print(example_episode)
+```
+
+### Step 6.2: Run Analysis on Your Data
+
+```{r user_data}
+# Analyze your own data
+user_result <- TransmissionChainAnalysis(
+  user_data = your_data,  # Your data frame
+  max_days = 365,
+  start_date = "2024-07-01",
+  
+  # Optional: surveillance data for context
+  surveillance_df = your_surveillance_data,
+  
+  # Stan settings
+  stan_chains = 4,
+  stan_iter = 500,
+  stan_warmup = 10
+)
+
+# View results
+print(user_result)
+plot(user_result, which = "all")
+```
+
+---
+
+## Part 7: Tips and Best Practices
+
+### Choosing Stan Settings
+
+| Setting | Description | Recommendation |
+|---------|-------------|----------------|
+| `stan_chains` | Number of MCMC chains | 4 (minimum for Rhat) |
+| `stan_iter` | Total iterations per chain | 2000-4000 |
+| `stan_warmup` | Warmup iterations | Half of iter |
+| `adapt_delta` | Step size adaptation | 0.95-0.99 for complex models |
+| `max_treedepth` | Maximum tree depth | 15 (increase if hitting limit) |
+
+### Troubleshooting
+
+**Problem: Divergent transitions**
+```{r troubleshoot_divergent}
+# Increase adapt_delta
+fit <- fit_household_model(
+  stan_data = stan_data,
+  control = list(adapt_delta = 0.99, max_treedepth = 15)
+)
+```
+
+**Problem: Low effective sample size**
+```{r troubleshoot_neff}
+# Increase iterations
+fit <- fit_household_model(
+  stan_data = stan_data,
+  iter = 4000,
+  warmup = 2000
+)
+```
+
+**Problem: Slow sampling**
+```{r troubleshoot_slow}
+# Use more cores and reduce refresh
+fit <- fit_household_model(
+  stan_data = stan_data,
+  cores = parallel::detectCores(),
+  refresh = 200
+)
+```
+
+---
+
+## Summary
+
+This tutorial covered:
+
+1. **Simulating data**: Creating surveillance data, defining household structures, running simulations
+2. **Stan inference**: Preparing data, fitting models, checking convergence
+3. **Visualization**: Creating publication-quality figures
+4. **Real data analysis**: Formatting and analyzing your own data
+
+For more advanced topics, see the **Reproducible Analysis** vignette which reproduces all analyses from the manuscript.
+
+## Session Info
+
+```{r session}
+sessionInfo()
+```

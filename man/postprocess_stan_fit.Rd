@@ -15,4 +15,46 @@ A data frame with parameter summaries.
 \description{
 Extracts and summarizes posterior distributions from a stanfit object.
 }
-\keyword{internal}
+\examples{
+\dontrun{
+household_profile <- list(
+  prob_adults   = c(0, 0, 1),
+  prob_infant   = 1.0,
+  prob_siblings = c(0, .8, .2),
+  prob_elderly  = c(0.7, 0.1, 0.2)
+)
+
+sim_res <- simulate_multiple_households_comm(
+  n_households = 100,
+  viral_testing = "viral load",
+  infectious_shape = 10,
+  infectious_scale = 1,
+  waning_shape = 6,
+  waning_scale = 10,
+  surveillance_interval = 4,
+  start_date = “2024-07-01”,
+  end_date = “2025-06-30”,
+  surveillance_df = surveillance_data,
+  seed = 123,
+  household_profile_list = household_profile
+)
+person_covariates <- sim_res$hh_df \%>\%
+  dplyr::select(hh_id, person_id, vacc_status) \%>\%   dplyr::distinct()
+
+df_for_stan <- sim_res$diagnostic_df \%>\%
+  dplyr::left_join(person_covariates, by = c("hh_id", "person_id"))
+
+stan_input <- prepare_stan_data(
+  df_clean = df_for_stan,
+  use_vl_data      = 1,
+  study_start_date = as.Date(study_start),
+  study_end_date   = as.Date(study_end),
+  surveillance_df  = surveillance_data,
+  study_start_date = as.Date(study_start),
+  study_end_date   = as.Date(study_end),
+  imputation_params = VL_params_list)
+fit <- fit_household_model(stan_input)
+posterior_summary <- postprocess_stan_fit(fit)
+print(posterior_summary)
+}
+}
